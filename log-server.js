@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { v4 as uuidv4 } from 'uuid';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,12 +47,13 @@ const getLogFilePath = (applicationId) => {
 app.post('/log', authenticateApiKey, (req, res) => {
   try {
     const { applicationId, timestamp, message, context } = req.body;
-  
+
     if (!applicationId || !message) {
       return res.status(400).json({ error: 'applicationId and message are required' });
     }
 
     const logEntry = {
+      id: uuidv4(),
       applicationId,
       timestamp: timestamp || new Date().toISOString(),
       message,
@@ -60,9 +62,9 @@ app.post('/log', authenticateApiKey, (req, res) => {
 
     const logFilePath = getLogFilePath(applicationId);
     const logLine = JSON.stringify(logEntry) + '\n';
-  
+
     fs.appendFileSync(logFilePath, logLine);
-  
+
     res.status(200).json({ success: true, logged: logEntry });
   } catch (error) {
     console.error('Error writing log:', error);
@@ -109,7 +111,7 @@ app.delete('/log/:applicationId', authenticateApiKey, (req, res) => {
   try {
     const { applicationId } = req.params;
     const logFilePath = getLogFilePath(applicationId);
-  
+
     if (fs.existsSync(logFilePath)) {
       fs.unlinkSync(logFilePath);
       res.json({ success: true, message: `Logs cleared for ${applicationId}` });
@@ -119,6 +121,47 @@ app.delete('/log/:applicationId', authenticateApiKey, (req, res) => {
   } catch (error) {
     console.error('Error clearing logs:', error);
     res.status(500).json({ error: 'Failed to clear logs' });
+  }
+});
+
+// DELETE /log/:applicationId/:entryId - Delete a single log entry by ID (requires API key)
+app.delete('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
+  try {
+    const { applicationId, entryId } = req.params;
+    const logFilePath = getLogFilePath(applicationId);
+
+    if (!fs.existsSync(logFilePath)) {
+      return res.status(404).json({ error: 'No logs found for this application' });
+    }
+
+    const logData = fs.readFileSync(logFilePath, 'utf8');
+    const logs = logData
+      .trim()
+      .split('\n')
+      .filter(line => line.length > 0)
+      .map(line => {
+        try {
+          return JSON.parse(line);
+        } catch (e) {
+          return null;
+        }
+      })
+      .filter(entry => entry !== null);
+
+    const initialLength = logs.length;
+    const filteredLogs = logs.filter(entry => entry.id !== entryId);
+
+    if (filteredLogs.length === initialLength) {
+      return res.status(404).json({ error: 'Log entry not found' });
+    }
+
+    // Schreibe die gefilterten Logs zurück
+    fs.writeFileSync(logFilePath, filteredLogs.map(entry => JSON.stringify(entry)).join('\n') + (filteredLogs.length ? '\n' : ''));
+
+    res.json({ success: true, message: `Log entry ${entryId} deleted for ${applicationId}` });
+  } catch (error) {
+    console.error('Error deleting log entry:', error);
+    res.status(500).json({ error: 'Failed to delete log entry' });
   }
 });
 

@@ -1,0 +1,33 @@
+# Node.js
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# dotenv environment variables file
+.env
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Docker
+*.pid
+*.seed
+
+# VS Code
+.vscode/
+
+# Misc
+*.swp
+*.swo
