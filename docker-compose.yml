@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  log-server:
+    build: .
+    container_name: simple-log-server
+    ports:
+      - "1234:1234"
+    environment:
+      - NODE_ENV=production
+      - PORT=1234
+      - API_KEY=${API_KEY:-super-secret-log-api-key-2024}
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:1234/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

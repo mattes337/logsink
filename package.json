@@ -1,0 +1,17 @@
+{
+  "name": "simple-log-server",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Simple logging server for collecting application logs",
+  "main": "log-server.js",
+  "scripts": {
+    "start": "node log-server.js",
+    "dev": "node --watch log-server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "keywords": ["logging", "server", "express"],
+  "author": "",
+  "license": "MIT"
+}
