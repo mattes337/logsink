@@ -132,11 +132,11 @@ app.get('/log/:applicationId/done', authenticateApiKey, (req, res) => {
   }
 });
 
-// PUT /log/:applicationId - Set state to done for all open items, add message from LLM
-app.put('/log/:applicationId', authenticateApiKey, (req, res) => {
+// PUT /log/:applicationId/:entryId - Set state to done for one entry, add message from LLM
+app.put('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
   try {
-    const { applicationId } = req.params;
-    const { message } = req.body;
+    const { applicationId, entryId } = req.params;
+    const { message, error } = req.body;
     const logFilePath = getLogFilePath(applicationId);
 
     if (!fs.existsSync(logFilePath)) {
@@ -146,17 +146,20 @@ app.put('/log/:applicationId', authenticateApiKey, (req, res) => {
     let logs = readLogs(logFilePath);
     let updated = false;
     logs = logs.map(entry => {
-      if (entry.state === 'open') {
+      if (entry.id === entryId && entry.state === 'open') {
         updated = true;
-        return { ...entry, state: 'done', llmMessage: message || '' };
+        return { ...entry, state: 'done', llmMessage: message || error || '' };
       }
       return entry;
     });
+    if (!updated) {
+      return res.status(404).json({ error: 'Log entry not found or not open' });
+    }
     writeLogs(logFilePath, logs);
-    res.json({ success: true, updated });
+    res.json({ success: true, entryId });
   } catch (error) {
-    console.error('Error updating logs:', error);
-    res.status(500).json({ error: 'Failed to update logs' });
+    console.error('Error updating log entry:', error);
+    res.status(500).json({ error: 'Failed to update log entry' });
   }
 });
 
