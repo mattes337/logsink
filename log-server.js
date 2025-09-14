@@ -500,18 +500,25 @@ app.listen(PORT, () => {
   console.log(`🔐 API Key: ${API_KEY.substring(0, 4)}...`);
   console.log(`
 Available endpoints:
-  POST   /log                          - Send log entries (requires API key)
-  GET    /log/:applicationId           - Retrieve all logs (requires API key)
-  GET    /log/:applicationId/open      - Retrieve open logs (requires API key)
-  GET    /log/:applicationId/done      - Retrieve done logs (requires API key)
-  POST   /log/:applicationId/:entryId  - Reject the implementation (requires API key)
-  PUT    /log/:applicationId/:entryId  - Mark log entry as done (requires API key)
-  DELETE /log/:applicationId           - Remove all closed items (requires API key)
-  DELETE /log/:applicationId/:entryId  - Set log entry to closed (requires API key)
-  GET    /health                       - Health check (no auth)
+  POST   /log                                    - Send log entries (requires API key)
+  GET    /log/:applicationId                     - Retrieve all logs (requires API key)
+  GET    /log/:applicationId/open                - Retrieve open and revert logs (requires API key)
+  GET    /log/:applicationId/in-progress         - Retrieve in-progress logs (requires API key)
+  GET    /log/:applicationId/done                - Retrieve done logs (requires API key)
+  PATCH  /log/:applicationId/:entryId/revert     - Set log entry to revert (requires API key)
+  PATCH  /log/:applicationId/:entryId/in-progress - Set log entry to in_progress (requires API key)
+  POST   /log/:applicationId/:entryId            - Reject the implementation (requires API key)
+  PUT    /log/:applicationId/:entryId            - Mark log entry as done with metadata (requires API key)
+  DELETE /log/:applicationId                     - Remove all closed items (requires API key)
+  DELETE /log/:applicationId/:entryId            - Set log entry to closed (requires API key)
+  GET    /health                                  - Health check (no auth)
 
 Authentication:
   Include API key in header: X-API-Key: ${API_KEY}
   Or as Bearer token: Authorization: Bearer ${API_KEY}
+  
+State workflow:
+  open -> in_progress -> done -> revert -> in_progress -> done
+                      -> closed
   `);
 });
