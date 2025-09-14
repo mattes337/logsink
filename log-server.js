@@ -345,7 +345,7 @@ app.delete('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
 
 
 // Endpoint zum Ausliefern von Bildern
-app.get('/log/:applicationId/img/:filename', (req, res) => {
+app.get('/log/:applicationId/img/:filename', authenticateApiKey, (req, res) => {
   const { filename } = req.params;
   const imgPath = path.join(IMAGES_DIR, filename);
   if (!fs.existsSync(imgPath)) {
