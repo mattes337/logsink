@@ -1,4 +1,5 @@
 import express from 'express';
+import lockfile from 'proper-lockfile';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -10,6 +11,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 1234;
 const LOGS_DIR = path.join(__dirname, 'logs');
+const IMAGES_DIR = path.join(__dirname, 'images');
+
+// Ensure images directory exists
+if (!fs.existsSync(IMAGES_DIR)) {
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+}
 const API_KEY = process.env.API_KEY || 'your-secret-api-key';
 
 // Ensure logs directory exists
@@ -47,7 +54,10 @@ const getLogFilePath = (applicationId) => {
 const readLogs = (logFilePath) => {
   if (!fs.existsSync(logFilePath)) return [];
   try {
+    // Lock für Lesen
+    const release = lockfile.lockSync(logFilePath, { retries: 3 });
     const logs = JSON.parse(fs.readFileSync(logFilePath, 'utf8'));
+    release();
     return Array.isArray(logs) ? logs : [];
   } catch {
     return [];
@@ -56,28 +66,57 @@ const readLogs = (logFilePath) => {
 
 // Helper to write logs safely
 const writeLogs = (logFilePath, logs) => {
-  fs.writeFileSync(logFilePath, JSON.stringify(logs, null, 2));
+  // Vor dem Schreiben: 'closed' Einträge, die älter als 24h sind, entfernen
+  const now = Date.now();
+  const cleanedLogs = logs.filter(entry => {
+    if (entry.state !== 'closed') return true;
+    // Prüfe, ob Eintrag älter als 24h ist
+    const ts = new Date(entry.timestamp).getTime();
+    return (now - ts) < 24 * 60 * 60 * 1000;
+  });
+  // Lock für Schreiben
+  const release = lockfile.lockSync(logFilePath, { retries: 3 });
+  fs.writeFileSync(logFilePath, JSON.stringify(cleanedLogs, null, 2));
+  release();
 };
 
 // POST /log - Accept log entries (requires API key)
 app.post('/log', authenticateApiKey, (req, res) => {
+  const { applicationId, timestamp, message, context } = req.body;
+  let release;
   try {
-    const { applicationId, timestamp, message, context } = req.body;
-
     if (!applicationId || !message) {
       return res.status(400).json({ error: 'applicationId and message are required' });
     }
 
+    const entryId = uuidv4();
+    let newContext = context || {};
+
+    // Bild extrahieren und speichern, falls vorhanden
+    if (newContext.screenshot && typeof newContext.screenshot === 'string' && newContext.screenshot.startsWith('data:image/')) {
+      const match = newContext.screenshot.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (match) {
+        const ext = match[1];
+        const base64Data = match[2];
+        const imgFilename = `${applicationId}-img-${entryId}.` + ext;
+        const imgPath = path.join(IMAGES_DIR, imgFilename);
+        fs.writeFileSync(imgPath, Buffer.from(base64Data, 'base64'));
+        // Ersetze Screenshot durch URL-Pfad
+        newContext.screenshot = `/log/${applicationId}/img/${imgFilename}`;
+      }
+    }
+
     const logEntry = {
-      id: uuidv4(),
+      id: entryId,
       applicationId,
       timestamp: timestamp || new Date().toISOString(),
       message,
-      context: context || {},
+      context: newContext,
       state: 'open'
     };
 
     const logFilePath = getLogFilePath(applicationId);
+    release = lockfile.lockSync(logFilePath, { retries: 3 });
     let logs = readLogs(logFilePath);
     logs.push(logEntry);
     writeLogs(logFilePath, logs);
@@ -85,6 +124,8 @@ app.post('/log', authenticateApiKey, (req, res) => {
   } catch (error) {
     console.error('Error writing log:', error);
     res.status(500).json({ error: 'Failed to write log' });
+  } finally {
+    if (release) release();
   }
 });
 
@@ -156,15 +197,15 @@ app.get('/log/:applicationId/done', authenticateApiKey, (req, res) => {
 
 // POST /log/:applicationId/:entryId - Set entry to open again, add rejectReason to context
 app.post('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
+  const { applicationId, entryId } = req.params;
+  const { rejectReason } = req.body;
+  const logFilePath = getLogFilePath(applicationId);
+  let release;
   try {
-    const { applicationId, entryId } = req.params;
-    const { rejectReason } = req.body;
-    const logFilePath = getLogFilePath(applicationId);
-
     if (!fs.existsSync(logFilePath)) {
       return res.status(404).json({ error: 'No logs found for this application' });
     }
-
+    release = lockfile.lockSync(logFilePath, { retries: 3 });
     let logs = readLogs(logFilePath);
     let updated = false;
     logs = logs.map(entry => {
@@ -186,20 +227,22 @@ app.post('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
   } catch (error) {
     console.error('Error reopening log entry:', error);
     res.status(500).json({ error: 'Failed to reopen log entry' });
+  } finally {
+    if (release) release();
   }
 });
 
 // PUT /log/:applicationId/:entryId - Set state to done for one entry, add message from LLM
 app.put('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
+  const { applicationId, entryId } = req.params;
+  const { message, error } = req.body;
+  const logFilePath = getLogFilePath(applicationId);
+  let release;
   try {
-    const { applicationId, entryId } = req.params;
-    const { message, error } = req.body;
-    const logFilePath = getLogFilePath(applicationId);
-
     if (!fs.existsSync(logFilePath)) {
       return res.status(404).json({ error: 'No logs found for this application' });
     }
-
+    release = lockfile.lockSync(logFilePath, { retries: 3 });
     let logs = readLogs(logFilePath);
     let updated = false;
     logs = logs.map(entry => {
@@ -217,19 +260,21 @@ app.put('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
   } catch (error) {
     console.error('Error updating log entry:', error);
     res.status(500).json({ error: 'Failed to update log entry' });
+  } finally {
+    if (release) release();
   }
 });
 
 // DELETE /log/:applicationId - Remove all closed items from the file
 app.delete('/log/:applicationId', authenticateApiKey, (req, res) => {
+  const { applicationId } = req.params;
+  const logFilePath = getLogFilePath(applicationId);
+  let release;
   try {
-    const { applicationId } = req.params;
-    const logFilePath = getLogFilePath(applicationId);
-
     if (!fs.existsSync(logFilePath)) {
       return res.status(404).json({ error: 'No logs found for this application' });
     }
-
+    release = lockfile.lockSync(logFilePath, { retries: 3 });
     let logs = readLogs(logFilePath);
     const initialLength = logs.length;
     logs = logs.filter(entry => entry.state !== 'closed');
@@ -238,24 +283,39 @@ app.delete('/log/:applicationId', authenticateApiKey, (req, res) => {
   } catch (error) {
     console.error('Error clearing logs:', error);
     res.status(500).json({ error: 'Failed to clear logs' });
+  } finally {
+    if (release) release();
   }
 });
 
 // DELETE /log/:applicationId/:entryId - Set state to closed for entry
 app.delete('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
+  const { applicationId, entryId } = req.params;
+  const logFilePath = getLogFilePath(applicationId);
+  let release;
   try {
-    const { applicationId, entryId } = req.params;
-    const logFilePath = getLogFilePath(applicationId);
-
     if (!fs.existsSync(logFilePath)) {
       return res.status(404).json({ error: 'No logs found for this application' });
     }
-
+    release = lockfile.lockSync(logFilePath, { retries: 3 });
     let logs = readLogs(logFilePath);
     let found = false;
+    let imgPathToDelete = null;
     logs = logs.map(entry => {
       if (entry.id === entryId && entry.state !== 'closed') {
         found = true;
+        // Prüfe, ob Screenshot-URL vorhanden ist und lösche Bilddatei
+        if (entry.context && entry.context.screenshot && typeof entry.context.screenshot === 'string') {
+          const imgUrl = entry.context.screenshot;
+          const imgMatch = imgUrl.match(/\/log\/(.+)\/img\/(.+)$/);
+          if (imgMatch) {
+            const imgFilename = imgMatch[2];
+            const imgPath = path.join(IMAGES_DIR, imgFilename);
+            if (fs.existsSync(imgPath)) {
+              try { fs.unlinkSync(imgPath); } catch {}
+            }
+          }
+        }
         return { ...entry, state: 'closed' };
       }
       return entry;
@@ -268,7 +328,34 @@ app.delete('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
   } catch (error) {
     console.error('Error closing log entry:', error);
     res.status(500).json({ error: 'Failed to close log entry' });
+  } finally {
+    if (release) release();
   }
+});
+
+
+// Endpoint zum Ausliefern von Bildern
+app.get('/log/:applicationId/img/:filename', (req, res) => {
+  const { filename } = req.params;
+  const imgPath = path.join(IMAGES_DIR, filename);
+  if (!fs.existsSync(imgPath)) {
+    return res.status(404).json({ error: 'Image not found' });
+  }
+  // Content-Type anhand der Dateiendung setzen
+  const ext = path.extname(filename).substring(1).toLowerCase();
+  const mimeTypes = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+    svg: 'image/svg+xml',
+    tiff: 'image/tiff',
+    ico: 'image/x-icon'
+  };
+  res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+  fs.createReadStream(imgPath).pipe(res);
 });
 
 // Health check endpoint (no auth required)
