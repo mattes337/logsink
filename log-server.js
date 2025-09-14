@@ -53,102 +53,90 @@ const getLogFilePath = (applicationId) => {
 // Helper to read logs safely
 const readLogs = (logFilePath) => {
   if (!fs.existsSync(logFilePath)) return [];
-  try {
-    // Lock für Lesen
-    const release = lockfile.lockSync(logFilePath, { retries: 3 });
-    const logs = JSON.parse(fs.readFileSync(logFilePath, 'utf8'));
-    release();
-    return Array.isArray(logs) ? logs : [];
-  } catch {
-    return [];
-  }
+  return lockfile.lock(logFilePath, { retries: 3 })
+    .then(release => {
+      const logs = JSON.parse(fs.readFileSync(logFilePath, 'utf8'));
+      return release().then(() => Array.isArray(logs) ? logs : []);
+    })
+    .catch(() => []);
 };
 
 // Helper to write logs safely
 const writeLogs = (logFilePath, logs) => {
-  // Vor dem Schreiben: 'closed' Einträge, die älter als 24h sind, entfernen
   const now = Date.now();
   const cleanedLogs = logs.filter(entry => {
     if (entry.state !== 'closed') return true;
-    // Prüfe, ob Eintrag älter als 24h ist
     const ts = new Date(entry.timestamp).getTime();
     return (now - ts) < 24 * 60 * 60 * 1000;
   });
-  // Lock für Schreiben
-  const release = lockfile.lockSync(logFilePath, { retries: 3 });
-  fs.writeFileSync(logFilePath, JSON.stringify(cleanedLogs, null, 2));
-  release();
+  return lockfile.lock(logFilePath, { retries: 3 })
+    .then(release => {
+      fs.writeFileSync(logFilePath, JSON.stringify(cleanedLogs, null, 2));
+      return release();
+    });
 };
 
 // POST /log - Accept log entries (requires API key)
 app.post('/log', authenticateApiKey, (req, res) => {
   const { applicationId, timestamp, message, context } = req.body;
-  let release;
-  try {
-    if (!applicationId || !message) {
-      return res.status(400).json({ error: 'applicationId and message are required' });
-    }
-
-    const entryId = uuidv4();
-    let newContext = context || {};
-
-    // Bild extrahieren und speichern, falls vorhanden
-    if (newContext.screenshot && typeof newContext.screenshot === 'string' && newContext.screenshot.startsWith('data:image/')) {
-      const match = newContext.screenshot.match(/^data:image\/(\w+);base64,(.+)$/);
-      if (match) {
-        const ext = match[1];
-        const base64Data = match[2];
-        const imgFilename = `${applicationId}-img-${entryId}.` + ext;
-        const imgPath = path.join(IMAGES_DIR, imgFilename);
-        fs.writeFileSync(imgPath, Buffer.from(base64Data, 'base64'));
-        // Ersetze Screenshot durch URL-Pfad
-        newContext.screenshot = `/log/${applicationId}/img/${imgFilename}`;
-      }
-    }
-
-    const logEntry = {
-      id: entryId,
-      applicationId,
-      timestamp: timestamp || new Date().toISOString(),
-      message,
-      context: newContext,
-      state: 'open'
-    };
-
-    const logFilePath = getLogFilePath(applicationId);
-    release = lockfile.lockSync(logFilePath, { retries: 3 });
-    let logs = readLogs(logFilePath);
-    logs.push(logEntry);
-    writeLogs(logFilePath, logs);
-    res.status(200).json({ success: true, logged: logEntry });
-  } catch (error) {
-    console.error('Error writing log:', error);
-    res.status(500).json({ error: 'Failed to write log' });
-  } finally {
-    if (release) release();
+  if (!applicationId || !message) {
+    return res.status(400).json({ error: 'applicationId and message are required' });
   }
+  const entryId = uuidv4();
+  let newContext = context || {};
+  if (newContext.screenshot && typeof newContext.screenshot === 'string' && newContext.screenshot.startsWith('data:image/')) {
+    const match = newContext.screenshot.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (match) {
+      const ext = match[1];
+      const base64Data = match[2];
+      const imgFilename = `${applicationId}-img-${entryId}.` + ext;
+      const imgPath = path.join(IMAGES_DIR, imgFilename);
+      fs.writeFileSync(imgPath, Buffer.from(base64Data, 'base64'));
+      newContext.screenshot = `/log/${applicationId}/img/${imgFilename}`;
+    }
+  }
+  const logEntry = {
+    id: entryId,
+    applicationId,
+    timestamp: timestamp || new Date().toISOString(),
+    message,
+    context: newContext,
+    state: 'open'
+  };
+  const logFilePath = getLogFilePath(applicationId);
+  readLogs(logFilePath)
+    .then(logs => {
+      logs.push(logEntry);
+      return writeLogs(logFilePath, logs);
+    })
+    .then(() => {
+      res.status(200).json({ success: true, logged: logEntry });
+    })
+    .catch(error => {
+      console.error('Error writing log:', error);
+      res.status(500).json({ error: 'Failed to write log' });
+    });
 });
 
 // GET /log/:applicationId - Retrieve all logs for an application (requires API key)
 app.get('/log/:applicationId', authenticateApiKey, (req, res) => {
-  try {
-    const { applicationId } = req.params;
-    const logFilePath = getLogFilePath(applicationId);
-
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
-    }
-
-    const logs = readLogs(logFilePath);
-    res.json({
-      applicationId,
-      totalLogs: logs.length,
-      logs
-    });
-  } catch (error) {
-    console.error('Error reading logs:', error);
-    res.status(500).json({ error: 'Failed to read logs' });
+  const { applicationId } = req.params;
+  const logFilePath = getLogFilePath(applicationId);
+  if (!fs.existsSync(logFilePath)) {
+    return res.status(404).json({ error: 'No logs found for this application' });
   }
+  readLogs(logFilePath)
+    .then(logs => {
+      res.json({
+        applicationId,
+        totalLogs: logs.length,
+        logs
+      });
+    })
+    .catch(error => {
+      console.error('Error reading logs:', error);
+      res.status(500).json({ error: 'Failed to read logs' });
+    });
 });
 
 // GET /log/:applicationId - Retrieve only open logs for an application (requires API key)
