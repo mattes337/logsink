@@ -163,46 +163,50 @@ app.get('/log/:applicationId', authenticateApiKey, (req, res) => {
 
 // GET /log/:applicationId - Retrieve only open logs for an application (requires API key)
 app.get('/log/:applicationId/open', authenticateApiKey, (req, res) => {
-  try {
-    const { applicationId } = req.params;
-    const logFilePath = getLogFilePath(applicationId);
+  (async () => {
+    try {
+      const { applicationId } = req.params;
+      const logFilePath = getLogFilePath(applicationId);
 
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
+      if (!fs.existsSync(logFilePath)) {
+        return res.status(404).json({ error: 'No logs found for this application' });
+      }
+
+      const logs = (await readLogs(logFilePath)).filter(entry => entry.state === 'open');
+      res.json({
+        applicationId,
+        totalLogs: logs.length,
+        logs
+      });
+    } catch (error) {
+      console.error('Error reading logs:', error);
+      res.status(500).json({ error: 'Failed to read logs' });
     }
-
-    const logs = readLogs(logFilePath).filter(entry => entry.state === 'open');
-    res.json({
-      applicationId,
-      totalLogs: logs.length,
-      logs
-    });
-  } catch (error) {
-    console.error('Error reading logs:', error);
-    res.status(500).json({ error: 'Failed to read logs' });
-  }
+  })();
 });
 
 // GET /log/:applicationId/done - Retrieve all done items
 app.get('/log/:applicationId/done', authenticateApiKey, (req, res) => {
-  try {
-    const { applicationId } = req.params;
-    const logFilePath = getLogFilePath(applicationId);
+  (async () => {
+    try {
+      const { applicationId } = req.params;
+      const logFilePath = getLogFilePath(applicationId);
 
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
+      if (!fs.existsSync(logFilePath)) {
+        return res.status(404).json({ error: 'No logs found for this application' });
+      }
+
+      const logs = (await readLogs(logFilePath)).filter(entry => entry.state === 'done');
+      res.json({
+        applicationId,
+        totalLogs: logs.length,
+        logs
+      });
+    } catch (error) {
+      console.error('Error reading logs:', error);
+      res.status(500).json({ error: 'Failed to read logs' });
     }
-
-    const logs = readLogs(logFilePath).filter(entry => entry.state === 'done');
-    res.json({
-      applicationId,
-      totalLogs: logs.length,
-      logs
-    });
-  } catch (error) {
-    console.error('Error reading logs:', error);
-    res.status(500).json({ error: 'Failed to read logs' });
-  }
+  })();
 });
 
 // POST /log/:applicationId/:entryId - Set entry to open again, add rejectReason to context
