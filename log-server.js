@@ -103,7 +103,7 @@ app.post('/log', authenticateApiKey, (req, res) => {
             const imgPath = path.join(IMAGES_DIR, imgFilename);
             fs.writeFileSync(imgPath, Buffer.from(base64Data, 'base64'));
             screenshots.push(imgFilename);
-            newObj[key] = `/log/${applicationId}/img/${imgFilename}`;
+            newObj[key] = imgFilename;
             continue;
           }
         }
