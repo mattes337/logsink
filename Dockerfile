@@ -15,6 +15,7 @@ COPY . .
 
 # Create logs directory
 RUN mkdir -p logs
+RUN mkdir -p images
 
 # Expose port
 EXPOSE 1234
