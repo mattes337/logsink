@@ -145,9 +145,9 @@ app.post('/log', authenticateApiKey, async (req, res) => {
     let newContext = context || {};
     
     // Hilfsfunktion: rekursiv Screenshots finden und ersetzen
-    function replaceScreenshots(obj, screenshots = []) {
+    function replaceScreenshots(obj, screenshots = [], idForScreenshots) {
       if (Array.isArray(obj)) {
-        return obj.map(item => replaceScreenshots(item, screenshots));
+        return obj.map(item => replaceScreenshots(item, screenshots, idForScreenshots));
       } else if (obj && typeof obj === 'object') {
         const newObj = {};
         for (const key of Object.keys(obj)) {
@@ -159,7 +159,7 @@ app.post('/log', authenticateApiKey, async (req, res) => {
             if (match) {
               const ext = match[1];
               const base64Data = match[2];
-              const imgFilename = `${applicationId}-img-${entryId}-${screenshots.length + 1}.${ext}`;
+              const imgFilename = `${applicationId}-img-${idForScreenshots}-${screenshots.length + 1}.${ext}`;
               const imgPath = path.join(IMAGES_DIR, imgFilename);
               fs.writeFileSync(imgPath, Buffer.from(base64Data, 'base64'));
               screenshots.push(imgFilename);
@@ -167,35 +167,78 @@ app.post('/log', authenticateApiKey, async (req, res) => {
               continue;
             }
           }
-          newObj[key] = replaceScreenshots(obj[key], screenshots);
+          newObj[key] = replaceScreenshots(obj[key], screenshots, idForScreenshots);
         }
         return newObj;
       }
       return obj;
     }
     
-    // Screenshots werden gesammelt und URLs ersetzt
-    const screenshots = [];
-    newContext = replaceScreenshots(newContext, screenshots);
-    
-    const logEntry = {
-      id: entryId,
-      applicationId,
-      timestamp: timestamp || new Date().toISOString(),
-      message,
-      context: newContext,
-      screenshots,
-      state: 'open'
-    };
-    
     const logFilePath = getLogFilePath(applicationId);
     
+    let resultEntry;
+    let deduplicated = false;
+    
     await modifyLogs(logFilePath, (logs) => {
-      logs.push(logEntry);
+      // Check for existing entry with same message
+      const existingEntry = logs.find(entry => 
+        entry.message === message && 
+        entry.applicationId === applicationId
+      );
+      
+      if (existingEntry) {
+        // Entry exists - just reopen it and update context if needed
+        deduplicated = true;
+        
+        // Process screenshots with the existing entry's ID
+        const screenshots = [];
+        const processedContext = replaceScreenshots(newContext, screenshots, existingEntry.id);
+        
+        // Update the existing entry
+        logs = logs.map(entry => {
+          if (entry.id === existingEntry.id) {
+            resultEntry = {
+              ...entry,
+              state: 'open',
+              timestamp: timestamp || new Date().toISOString(),
+              context: { ...entry.context, ...processedContext },
+              screenshots: [...(entry.screenshots || []), ...screenshots],
+              reopenedAt: new Date().toISOString(),
+              reopenCount: (entry.reopenCount || 0) + 1
+            };
+            return resultEntry;
+          }
+          return entry;
+        });
+      } else {
+        // New entry - create it
+        const screenshots = [];
+        const processedContext = replaceScreenshots(newContext, screenshots, entryId);
+        
+        const logEntry = {
+          id: entryId,
+          applicationId,
+          timestamp: timestamp || new Date().toISOString(),
+          message,
+          context: processedContext,
+          screenshots,
+          state: 'open',
+          reopenCount: 0
+        };
+        
+        logs.push(logEntry);
+        resultEntry = logEntry;
+      }
+      
       return logs;
     });
     
-    res.status(200).json({ success: true, logged: logEntry });
+    res.status(200).json({ 
+      success: true, 
+      logged: resultEntry,
+      deduplicated: deduplicated,
+      action: deduplicated ? 'reopened_existing' : 'created_new'
+    });
   } catch (error) {
     console.error('Error writing log:', error);
     res.status(500).json({ error: 'Failed to write log' });
