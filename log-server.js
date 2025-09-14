@@ -88,8 +88,30 @@ app.post('/log', authenticateApiKey, (req, res) => {
   }
 });
 
-// GET /log/:applicationId - Retrieve only open logs for an application (requires API key)
+// GET /log/:applicationId - Retrieve all logs for an application (requires API key)
 app.get('/log/:applicationId', authenticateApiKey, (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const logFilePath = getLogFilePath(applicationId);
+
+    if (!fs.existsSync(logFilePath)) {
+      return res.status(404).json({ error: 'No logs found for this application' });
+    }
+
+    const logs = readLogs(logFilePath);
+    res.json({
+      applicationId,
+      totalLogs: logs.length,
+      logs
+    });
+  } catch (error) {
+    console.error('Error reading logs:', error);
+    res.status(500).json({ error: 'Failed to read logs' });
+  }
+});
+
+// GET /log/:applicationId - Retrieve only open logs for an application (requires API key)
+app.get('/log/:applicationId/open', authenticateApiKey, (req, res) => {
   try {
     const { applicationId } = req.params;
     const logFilePath = getLogFilePath(applicationId);
@@ -129,6 +151,41 @@ app.get('/log/:applicationId/done', authenticateApiKey, (req, res) => {
   } catch (error) {
     console.error('Error reading logs:', error);
     res.status(500).json({ error: 'Failed to read logs' });
+  }
+});
+
+// POST /log/:applicationId/:entryId - Set entry to open again, add rejectReason to context
+app.post('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
+  try {
+    const { applicationId, entryId } = req.params;
+    const { rejectReason } = req.body;
+    const logFilePath = getLogFilePath(applicationId);
+
+    if (!fs.existsSync(logFilePath)) {
+      return res.status(404).json({ error: 'No logs found for this application' });
+    }
+
+    let logs = readLogs(logFilePath);
+    let updated = false;
+    logs = logs.map(entry => {
+      if (entry.id === entryId && entry.state !== 'open') {
+        updated = true;
+        return {
+          ...entry,
+          state: 'open',
+          context: { ...entry.context, rejectReason }
+        };
+      }
+      return entry;
+    });
+    if (!updated) {
+      return res.status(404).json({ error: 'Log entry not found or already open' });
+    }
+    writeLogs(logFilePath, logs);
+    res.json({ success: true, entryId });
+  } catch (error) {
+    console.error('Error reopening log entry:', error);
+    res.status(500).json({ error: 'Failed to reopen log entry' });
   }
 });
 
@@ -225,10 +282,16 @@ app.listen(PORT, () => {
   console.log(`🔐 API Key: ${API_KEY.substring(0, 4)}...`);
   console.log(`
 Available endpoints:
-  POST /log                    - Send log entries (requires API key)
-  GET  /log/:applicationId     - Retrieve logs (requires API key)
-  DELETE /log/:applicationId   - Clear logs (requires API key)
-  GET  /health                 - Health check (no auth)
+  POST   /log                          - Send log entries (requires API key)
+  GET    /log/:applicationId           - Retrieve all logs (requires API key)
+  GET    /log/:applicationId/open      - Retrieve open logs (requires API key)
+  GET    /log/:applicationId/done      - Retrieve done logs (requires API key)
+  POST   /log/:applicationId/:entryId  - Reject the implementation (requires API key)
+  PUT    /log/:applicationId/:entryId  - Mark log entry as done (requires API key)
+  DELETE /log/:applicationId           - Remove all closed items (requires API key)
+  DELETE /log/:applicationId/:entryId  - Set log entry to closed (requires API key)
+  GET    /health                       - Health check (no auth)
+
 
 Authentication:
   Include API key in header: X-API-Key: ${API_KEY}
