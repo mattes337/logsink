@@ -180,21 +180,26 @@ app.post('/log', authenticateApiKey, async (req, res) => {
     let deduplicated = false;
     
     await modifyLogs(logFilePath, (logs) => {
-      // Check for existing entry with same message
-      const existingEntry = logs.find(entry => 
-        entry.message === message && 
-        entry.applicationId === applicationId
-      );
+      // Create a combined key for the new entry
+      const newCombinedMessage = message + (newContext.message || '');
       
-      if (existingEntry) {
-        // Entry exists - just reopen it and update context if needed
+      // Check for existing entry with same combined message that is in a "finished" state
+      const existingEntry = logs.find(entry => {
+        const existingCombinedMessage = entry.message + (entry.context?.message || '');
+        return existingCombinedMessage === newCombinedMessage && 
+               entry.applicationId === applicationId &&
+               (entry.state === 'done' || entry.state === 'closed');
+      });
+      
+      if (existingEntry && existingEntry.state === 'done') {
+        // If there's a done entry with same combined message, reopen it
         deduplicated = true;
         
         // Process screenshots with the existing entry's ID
         const screenshots = [];
         const processedContext = replaceScreenshots(newContext, screenshots, existingEntry.id);
         
-        // Update the existing entry
+        // Update the existing entry to reopen it
         logs = logs.map(entry => {
           if (entry.id === existingEntry.id) {
             resultEntry = {
@@ -211,7 +216,7 @@ app.post('/log', authenticateApiKey, async (req, res) => {
           return entry;
         });
       } else {
-        // New entry - create it
+        // Create a new entry if no existing done entry found, or if existing entry is still active
         const screenshots = [];
         const processedContext = replaceScreenshots(newContext, screenshots, entryId);
         
