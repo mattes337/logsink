@@ -316,6 +316,30 @@ app.get('/log/:applicationId/done', authenticateApiKey, async (req, res) => {
   }
 });
 
+// GET /log/:applicationId/in-progress - Retrieve all in-progress items
+app.get('/log/:applicationId/in-progress', authenticateApiKey, async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const logFilePath = getLogFilePath(applicationId);
+    
+    if (!fs.existsSync(logFilePath)) {
+      return res.status(404).json({ error: 'No logs found for this application' });
+    }
+    
+    const logs = await readLogsWithLock(logFilePath);
+    const inProgressLogs = logs.filter(entry => entry.state === 'in_progress');
+    
+    res.json({
+      applicationId,
+      totalLogs: inProgressLogs.length,
+      logs: inProgressLogs
+    });
+  } catch (error) {
+    console.error('Error reading logs:', error);
+    res.status(500).json({ error: 'Failed to read logs' });
+  }
+});
+
 // POST /log/:applicationId/:entryId - Set entry to open again, add rejectReason to context
 app.post('/log/:applicationId/:entryId', authenticateApiKey, async (req, res) => {
   try {
@@ -497,6 +521,7 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Log server running on http://localhost:${PORT}`);
   console.log(`📁 Logs stored in: ${LOGS_DIR}`);
+  console.log(`🖼️ Images stored in: ${IMAGES_DIR}`);
   console.log(`🔐 API Key: ${API_KEY.substring(0, 4)}...`);
   console.log(`
 Available endpoints:
@@ -505,6 +530,7 @@ Available endpoints:
   GET    /log/:applicationId/open                - Retrieve open and revert logs (requires API key)
   GET    /log/:applicationId/in-progress         - Retrieve in-progress logs (requires API key)
   GET    /log/:applicationId/done                - Retrieve done logs (requires API key)
+  GET    /log/:applicationId/img/:filename       - Retrieve stored images (requires API key)
   PATCH  /log/:applicationId/:entryId/revert     - Set log entry to revert (requires API key)
   PATCH  /log/:applicationId/:entryId/in-progress - Set log entry to in_progress (requires API key)
   POST   /log/:applicationId/:entryId            - Reject the implementation (requires API key)
