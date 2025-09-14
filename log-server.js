@@ -214,36 +214,37 @@ app.post('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
   const { applicationId, entryId } = req.params;
   const { rejectReason } = req.body;
   const logFilePath = getLogFilePath(applicationId);
-  let release;
-  try {
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
-    }
-    release = lockfile.lockSync(logFilePath, { retries: 3 });
-    let logs = readLogs(logFilePath);
-    let updated = false;
-    logs = logs.map(entry => {
-      if (entry.id === entryId && entry.state !== 'open') {
-        updated = true;
-        return {
-          ...entry,
-          state: 'open',
-          context: { ...entry.context, rejectReason }
-        };
+  (async () => {
+    try {
+      if (!fs.existsSync(logFilePath)) {
+        return res.status(404).json({ error: 'No logs found for this application' });
       }
-      return entry;
-    });
-    if (!updated) {
-      return res.status(404).json({ error: 'Log entry not found or already open' });
+      const release = await lockfile.lock(logFilePath, { retries: 3 });
+      let logs = await readLogs(logFilePath);
+      let updated = false;
+      logs = logs.map(entry => {
+        if (entry.id === entryId && entry.state !== 'open') {
+          updated = true;
+          return {
+            ...entry,
+            state: 'open',
+            context: { ...entry.context, rejectReason }
+          };
+        }
+        return entry;
+      });
+      if (!updated) {
+        await release();
+        return res.status(404).json({ error: 'Log entry not found or already open' });
+      }
+      await writeLogs(logFilePath, logs);
+      await release();
+      res.json({ success: true, entryId });
+    } catch (error) {
+      console.error('Error reopening log entry:', error);
+      res.status(500).json({ error: 'Failed to reopen log entry' });
     }
-    writeLogs(logFilePath, logs);
-    res.json({ success: true, entryId });
-  } catch (error) {
-    console.error('Error reopening log entry:', error);
-    res.status(500).json({ error: 'Failed to reopen log entry' });
-  } finally {
-    if (release) release();
-  }
+  })();
 });
 
 // PUT /log/:applicationId/:entryId - Set state to done for one entry, add message from LLM
@@ -251,96 +252,98 @@ app.put('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
   const { applicationId, entryId } = req.params;
   const { message, error } = req.body;
   const logFilePath = getLogFilePath(applicationId);
-  let release;
-  try {
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
-    }
-    release = lockfile.lockSync(logFilePath, { retries: 3 });
-    let logs = readLogs(logFilePath);
-    let updated = false;
-    logs = logs.map(entry => {
-      if (entry.id === entryId && entry.state === 'open') {
-        updated = true;
-        return { ...entry, state: 'done', llmMessage: message || error || '' };
+  (async () => {
+    try {
+      if (!fs.existsSync(logFilePath)) {
+        return res.status(404).json({ error: 'No logs found for this application' });
       }
-      return entry;
-    });
-    if (!updated) {
-      return res.status(404).json({ error: 'Log entry not found or not open' });
+      const release = await lockfile.lock(logFilePath, { retries: 3 });
+      let logs = await readLogs(logFilePath);
+      let updated = false;
+      logs = logs.map(entry => {
+        if (entry.id === entryId && entry.state === 'open') {
+          updated = true;
+          return { ...entry, state: 'done', llmMessage: message || error || '' };
+        }
+        return entry;
+      });
+      if (!updated) {
+        await release();
+        return res.status(404).json({ error: 'Log entry not found or not open' });
+      }
+      await writeLogs(logFilePath, logs);
+      await release();
+      res.json({ success: true, entryId });
+    } catch (error) {
+      console.error('Error updating log entry:', error);
+      res.status(500).json({ error: 'Failed to update log entry' });
     }
-    writeLogs(logFilePath, logs);
-    res.json({ success: true, entryId });
-  } catch (error) {
-    console.error('Error updating log entry:', error);
-    res.status(500).json({ error: 'Failed to update log entry' });
-  } finally {
-    if (release) release();
-  }
+  })();
 });
 
 // DELETE /log/:applicationId - Remove all closed items from the file
 app.delete('/log/:applicationId', authenticateApiKey, (req, res) => {
   const { applicationId } = req.params;
   const logFilePath = getLogFilePath(applicationId);
-  let release;
-  try {
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
+  (async () => {
+    try {
+      if (!fs.existsSync(logFilePath)) {
+        return res.status(404).json({ error: 'No logs found for this application' });
+      }
+      const release = await lockfile.lock(logFilePath, { retries: 3 });
+      let logs = await readLogs(logFilePath);
+      const initialLength = logs.length;
+      logs = logs.filter(entry => entry.state !== 'closed');
+      await writeLogs(logFilePath, logs);
+      await release();
+      res.json({ success: true, message: `Removed ${initialLength - logs.length} closed items for ${applicationId}` });
+    } catch (error) {
+      console.error('Error clearing logs:', error);
+      res.status(500).json({ error: 'Failed to clear logs' });
     }
-    release = lockfile.lockSync(logFilePath, { retries: 3 });
-    let logs = readLogs(logFilePath);
-    const initialLength = logs.length;
-    logs = logs.filter(entry => entry.state !== 'closed');
-    writeLogs(logFilePath, logs);
-    res.json({ success: true, message: `Removed ${initialLength - logs.length} closed items for ${applicationId}` });
-  } catch (error) {
-    console.error('Error clearing logs:', error);
-    res.status(500).json({ error: 'Failed to clear logs' });
-  } finally {
-    if (release) release();
-  }
+  })();
 });
 
 // DELETE /log/:applicationId/:entryId - Set state to closed for entry
 app.delete('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
   const { applicationId, entryId } = req.params;
   const logFilePath = getLogFilePath(applicationId);
-  let release;
-  try {
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
-    }
-    release = lockfile.lockSync(logFilePath, { retries: 3 });
-    let logs = readLogs(logFilePath);
-    let found = false;
-    logs = logs.map(entry => {
-      if (entry.id === entryId && entry.state !== 'closed') {
-        found = true;
-        // Alle zugehörigen Screenshots löschen
-        if (Array.isArray(entry.screenshots)) {
-          for (const imgFilename of entry.screenshots) {
-            const imgPath = path.join(IMAGES_DIR, imgFilename);
-            if (fs.existsSync(imgPath)) {
-              try { fs.unlinkSync(imgPath); } catch {}
+  (async () => {
+    try {
+      if (!fs.existsSync(logFilePath)) {
+        return res.status(404).json({ error: 'No logs found for this application' });
+      }
+      const release = await lockfile.lock(logFilePath, { retries: 3 });
+      let logs = await readLogs(logFilePath);
+      let found = false;
+      logs = await Promise.all(logs.map(async entry => {
+        if (entry.id === entryId && entry.state !== 'closed') {
+          found = true;
+          // Alle zugehörigen Screenshots löschen
+          if (Array.isArray(entry.screenshots)) {
+            for (const imgFilename of entry.screenshots) {
+              const imgPath = path.join(IMAGES_DIR, imgFilename);
+              if (fs.existsSync(imgPath)) {
+                try { fs.unlinkSync(imgPath); } catch {}
+              }
             }
           }
+          return { ...entry, state: 'closed' };
         }
-        return { ...entry, state: 'closed' };
+        return entry;
+      }));
+      if (!found) {
+        await release();
+        return res.status(404).json({ error: 'Log entry not found or already closed' });
       }
-      return entry;
-    });
-    if (!found) {
-      return res.status(404).json({ error: 'Log entry not found or already closed' });
+      await writeLogs(logFilePath, logs);
+      await release();
+      res.json({ success: true, message: `Log entry ${entryId} set to closed for ${applicationId}` });
+    } catch (error) {
+      console.error('Error closing log entry:', error);
+      res.status(500).json({ error: 'Failed to close log entry' });
     }
-    writeLogs(logFilePath, logs);
-    res.json({ success: true, message: `Log entry ${entryId} set to closed for ${applicationId}` });
-  } catch (error) {
-    console.error('Error closing log entry:', error);
-    res.status(500).json({ error: 'Failed to close log entry' });
-  } finally {
-    if (release) release();
-  }
+  })();
 });
 
 
