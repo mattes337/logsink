@@ -43,6 +43,22 @@ const getLogFilePath = (applicationId) => {
   return path.join(LOGS_DIR, `${applicationId}.log`);
 };
 
+// Helper to read logs safely
+const readLogs = (logFilePath) => {
+  if (!fs.existsSync(logFilePath)) return [];
+  try {
+    const logs = JSON.parse(fs.readFileSync(logFilePath, 'utf8'));
+    return Array.isArray(logs) ? logs : [];
+  } catch {
+    return [];
+  }
+};
+
+// Helper to write logs safely
+const writeLogs = (logFilePath, logs) => {
+  fs.writeFileSync(logFilePath, JSON.stringify(logs, null, 2));
+};
+
 // POST /log - Accept log entries (requires API key)
 app.post('/log', authenticateApiKey, (req, res) => {
   try {
@@ -57,14 +73,14 @@ app.post('/log', authenticateApiKey, (req, res) => {
       applicationId,
       timestamp: timestamp || new Date().toISOString(),
       message,
-      context: context || {}
+      context: context || {},
+      state: 'open'
     };
 
     const logFilePath = getLogFilePath(applicationId);
-    const logLine = JSON.stringify(logEntry) + '\n';
-
-    fs.appendFileSync(logFilePath, logLine);
-
+    let logs = readLogs(logFilePath);
+    logs.push(logEntry);
+    writeLogs(logFilePath, logs);
     res.status(200).json({ success: true, logged: logEntry });
   } catch (error) {
     console.error('Error writing log:', error);
@@ -72,29 +88,17 @@ app.post('/log', authenticateApiKey, (req, res) => {
   }
 });
 
-// GET /log/:applicationId - Retrieve logs for an application (requires API key)
+// GET /log/:applicationId - Retrieve only open logs for an application (requires API key)
 app.get('/log/:applicationId', authenticateApiKey, (req, res) => {
   try {
     const { applicationId } = req.params;
     const logFilePath = getLogFilePath(applicationId);
-  
+
     if (!fs.existsSync(logFilePath)) {
       return res.status(404).json({ error: 'No logs found for this application' });
     }
-  
-    const logData = fs.readFileSync(logFilePath, 'utf8');
-    const logs = logData
-      .trim()
-      .split('\n')
-      .filter(line => line.length > 0)
-      .map(line => {
-        try {
-          return JSON.parse(line);
-        } catch (e) {
-          return { error: 'Invalid log entry', raw: line };
-        }
-      });
-  
+
+    const logs = readLogs(logFilePath).filter(entry => entry.state === 'open');
     res.json({
       applicationId,
       totalLogs: logs.length,
@@ -106,25 +110,78 @@ app.get('/log/:applicationId', authenticateApiKey, (req, res) => {
   }
 });
 
-// DELETE /log/:applicationId - Clear logs for an application (requires API key)
+// GET /log/:applicationId/done - Retrieve all done items
+app.get('/log/:applicationId/done', authenticateApiKey, (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const logFilePath = getLogFilePath(applicationId);
+
+    if (!fs.existsSync(logFilePath)) {
+      return res.status(404).json({ error: 'No logs found for this application' });
+    }
+
+    const logs = readLogs(logFilePath).filter(entry => entry.state === 'done');
+    res.json({
+      applicationId,
+      totalLogs: logs.length,
+      logs
+    });
+  } catch (error) {
+    console.error('Error reading logs:', error);
+    res.status(500).json({ error: 'Failed to read logs' });
+  }
+});
+
+// PUT /log/:applicationId - Set state to done for all open items, add message from LLM
+app.put('/log/:applicationId', authenticateApiKey, (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const { message } = req.body;
+    const logFilePath = getLogFilePath(applicationId);
+
+    if (!fs.existsSync(logFilePath)) {
+      return res.status(404).json({ error: 'No logs found for this application' });
+    }
+
+    let logs = readLogs(logFilePath);
+    let updated = false;
+    logs = logs.map(entry => {
+      if (entry.state === 'open') {
+        updated = true;
+        return { ...entry, state: 'done', llmMessage: message || '' };
+      }
+      return entry;
+    });
+    writeLogs(logFilePath, logs);
+    res.json({ success: true, updated });
+  } catch (error) {
+    console.error('Error updating logs:', error);
+    res.status(500).json({ error: 'Failed to update logs' });
+  }
+});
+
+// DELETE /log/:applicationId - Remove all closed items from the file
 app.delete('/log/:applicationId', authenticateApiKey, (req, res) => {
   try {
     const { applicationId } = req.params;
     const logFilePath = getLogFilePath(applicationId);
 
-    if (fs.existsSync(logFilePath)) {
-      fs.unlinkSync(logFilePath);
-      res.json({ success: true, message: `Logs cleared for ${applicationId}` });
-    } else {
-      res.status(404).json({ error: 'No logs found for this application' });
+    if (!fs.existsSync(logFilePath)) {
+      return res.status(404).json({ error: 'No logs found for this application' });
     }
+
+    let logs = readLogs(logFilePath);
+    const initialLength = logs.length;
+    logs = logs.filter(entry => entry.state !== 'closed');
+    writeLogs(logFilePath, logs);
+    res.json({ success: true, message: `Removed ${initialLength - logs.length} closed items for ${applicationId}` });
   } catch (error) {
     console.error('Error clearing logs:', error);
     res.status(500).json({ error: 'Failed to clear logs' });
   }
 });
 
-// DELETE /log/:applicationId/:entryId - Delete a single log entry by ID (requires API key)
+// DELETE /log/:applicationId/:entryId - Set state to closed for entry
 app.delete('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
   try {
     const { applicationId, entryId } = req.params;
@@ -134,34 +191,23 @@ app.delete('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
       return res.status(404).json({ error: 'No logs found for this application' });
     }
 
-    const logData = fs.readFileSync(logFilePath, 'utf8');
-    const logs = logData
-      .trim()
-      .split('\n')
-      .filter(line => line.length > 0)
-      .map(line => {
-        try {
-          return JSON.parse(line);
-        } catch (e) {
-          return null;
-        }
-      })
-      .filter(entry => entry !== null);
-
-    const initialLength = logs.length;
-    const filteredLogs = logs.filter(entry => entry.id !== entryId);
-
-    if (filteredLogs.length === initialLength) {
-      return res.status(404).json({ error: 'Log entry not found' });
+    let logs = readLogs(logFilePath);
+    let found = false;
+    logs = logs.map(entry => {
+      if (entry.id === entryId && entry.state !== 'closed') {
+        found = true;
+        return { ...entry, state: 'closed' };
+      }
+      return entry;
+    });
+    if (!found) {
+      return res.status(404).json({ error: 'Log entry not found or already closed' });
     }
-
-    // Schreibe die gefilterten Logs zurück
-    fs.writeFileSync(logFilePath, filteredLogs.map(entry => JSON.stringify(entry)).join('\n') + (filteredLogs.length ? '\n' : ''));
-
-    res.json({ success: true, message: `Log entry ${entryId} deleted for ${applicationId}` });
+    writeLogs(logFilePath, logs);
+    res.json({ success: true, message: `Log entry ${entryId} set to closed for ${applicationId}` });
   } catch (error) {
-    console.error('Error deleting log entry:', error);
-    res.status(500).json({ error: 'Failed to delete log entry' });
+    console.error('Error closing log entry:', error);
+    res.status(500).json({ error: 'Failed to close log entry' });
   }
 });
 
