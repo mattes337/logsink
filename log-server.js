@@ -84,23 +84,45 @@ app.post('/log', authenticateApiKey, (req, res) => {
   }
   const entryId = uuidv4();
   let newContext = context || {};
-  if (newContext.screenshot && typeof newContext.screenshot === 'string' && newContext.screenshot.startsWith('data:image/')) {
-    const match = newContext.screenshot.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (match) {
-      const ext = match[1];
-      const base64Data = match[2];
-      const imgFilename = `${applicationId}-img-${entryId}.` + ext;
-      const imgPath = path.join(IMAGES_DIR, imgFilename);
-      fs.writeFileSync(imgPath, Buffer.from(base64Data, 'base64'));
-      newContext.screenshot = `/log/${applicationId}/img/${imgFilename}`;
+  // Hilfsfunktion: rekursiv Screenshots finden und ersetzen
+  function replaceScreenshots(obj, screenshots = []) {
+    if (Array.isArray(obj)) {
+      return obj.map(item => replaceScreenshots(item, screenshots));
+    } else if (obj && typeof obj === 'object') {
+      const newObj = {};
+      for (const key of Object.keys(obj)) {
+        if (
+          typeof obj[key] === 'string' &&
+          obj[key].startsWith('data:image/')
+        ) {
+          const match = obj[key].match(/^data:image\/(\w+);base64,(.+)$/);
+          if (match) {
+            const ext = match[1];
+            const base64Data = match[2];
+            const imgFilename = `${applicationId}-img-${entryId}-${screenshots.length + 1}.` + ext;
+            const imgPath = path.join(IMAGES_DIR, imgFilename);
+            fs.writeFileSync(imgPath, Buffer.from(base64Data, 'base64'));
+            screenshots.push(imgFilename);
+            newObj[key] = `/log/${applicationId}/img/${imgFilename}`;
+            continue;
+          }
+        }
+        newObj[key] = replaceScreenshots(obj[key], screenshots);
+      }
+      return newObj;
     }
+    return obj;
   }
+  // Screenshots werden gesammelt und URLs ersetzt
+  const screenshots = [];
+  newContext = replaceScreenshots(newContext, screenshots);
   const logEntry = {
     id: entryId,
     applicationId,
     timestamp: timestamp || new Date().toISOString(),
     message,
     context: newContext,
+    screenshots,
     state: 'open'
   };
   const logFilePath = getLogFilePath(applicationId);
@@ -288,16 +310,12 @@ app.delete('/log/:applicationId/:entryId', authenticateApiKey, (req, res) => {
     release = lockfile.lockSync(logFilePath, { retries: 3 });
     let logs = readLogs(logFilePath);
     let found = false;
-    let imgPathToDelete = null;
     logs = logs.map(entry => {
       if (entry.id === entryId && entry.state !== 'closed') {
         found = true;
-        // Prüfe, ob Screenshot-URL vorhanden ist und lösche Bilddatei
-        if (entry.context && entry.context.screenshot && typeof entry.context.screenshot === 'string') {
-          const imgUrl = entry.context.screenshot;
-          const imgMatch = imgUrl.match(/\/log\/(.+)\/img\/(.+)$/);
-          if (imgMatch) {
-            const imgFilename = imgMatch[2];
+        // Alle zugehörigen Screenshots löschen
+        if (Array.isArray(entry.screenshots)) {
+          for (const imgFilename of entry.screenshots) {
             const imgPath = path.join(IMAGES_DIR, imgFilename);
             if (fs.existsSync(imgPath)) {
               try { fs.unlinkSync(imgPath); } catch {}
