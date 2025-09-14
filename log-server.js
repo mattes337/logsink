@@ -340,6 +340,84 @@ app.get('/log/:applicationId/in-progress', authenticateApiKey, async (req, res) 
   }
 });
 
+// PATCH /log/:applicationId/:entryId/revert - Set state to revert
+app.patch('/log/:applicationId/:entryId/revert', authenticateApiKey, async (req, res) => {
+  try {
+    const { applicationId, entryId } = req.params;
+    const { revertReason } = req.body;
+    const logFilePath = getLogFilePath(applicationId);
+    
+    if (!fs.existsSync(logFilePath)) {
+      return res.status(404).json({ error: 'No logs found for this application' });
+    }
+    
+    let updated = false;
+    let updatedEntry = null;
+    
+    await modifyLogs(logFilePath, (logs) => {
+      return logs.map(entry => {
+        if (entry.id === entryId && entry.state === 'done') {
+          updated = true;
+          updatedEntry = {
+            ...entry,
+            state: 'revert',
+            revertedAt: new Date().toISOString(),
+            revertReason: revertReason || null
+          };
+          return updatedEntry;
+        }
+        return entry;
+      });
+    });
+    
+    if (!updated) {
+      return res.status(404).json({ error: 'Log entry not found or not in done state' });
+    }
+    
+    res.json({ success: true, entryId, state: 'revert', entry: updatedEntry });
+  } catch (error) {
+    console.error('Error updating log entry to revert:', error);
+    res.status(500).json({ error: 'Failed to update log entry to revert' });
+  }
+});
+
+// PATCH /log/:applicationId/:entryId/in-progress - Set state to in_progress
+app.patch('/log/:applicationId/:entryId/in-progress', authenticateApiKey, async (req, res) => {
+  try {
+    const { applicationId, entryId } = req.params;
+    const logFilePath = getLogFilePath(applicationId);
+    
+    if (!fs.existsSync(logFilePath)) {
+      return res.status(404).json({ error: 'No logs found for this application' });
+    }
+    
+    let updated = false;
+    
+    await modifyLogs(logFilePath, (logs) => {
+      return logs.map(entry => {
+        if (entry.id === entryId && (entry.state === 'open' || entry.state === 'revert')) {
+          updated = true;
+          return { 
+            ...entry, 
+            state: 'in_progress',
+            startedAt: new Date().toISOString()
+          };
+        }
+        return entry;
+      });
+    });
+    
+    if (!updated) {
+      return res.status(404).json({ error: 'Log entry not found or not in open/revert state' });
+    }
+    
+    res.json({ success: true, entryId, state: 'in_progress' });
+  } catch (error) {
+    console.error('Error updating log entry to in_progress:', error);
+    res.status(500).json({ error: 'Failed to update log entry to in_progress' });
+  }
+});
+
 // POST /log/:applicationId/:entryId - Set entry to open again, add rejectReason to context
 app.post('/log/:applicationId/:entryId', authenticateApiKey, async (req, res) => {
   try {
