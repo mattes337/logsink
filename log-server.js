@@ -24,12 +24,41 @@ if (!fs.existsSync(LOGS_DIR)) {
   fs.mkdirSync(LOGS_DIR, { recursive: true });
 }
 
+// Queue system for file operations to prevent concurrent locks
+const fileQueues = new Map();
+
+const queueFileOperation = async (filePath, operation) => {
+  if (!fileQueues.has(filePath)) {
+    fileQueues.set(filePath, Promise.resolve());
+  }
+  
+  const currentQueue = fileQueues.get(filePath);
+  const newOperation = currentQueue
+    .then(() => operation())
+    .catch(() => operation()); // Continue even if previous operation failed
+  
+  fileQueues.set(filePath, newOperation);
+  
+  try {
+    return await newOperation;
+  } finally {
+    // Clean up if this was the last operation
+    if (fileQueues.get(filePath) === newOperation) {
+      setTimeout(() => {
+        if (fileQueues.get(filePath) === newOperation) {
+          fileQueues.delete(filePath);
+        }
+      }, 100);
+    }
+  }
+};
+
 app.use(express.json());
 
 // CORS for browser requests
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
   next();
 });
@@ -58,79 +87,96 @@ const withFileLock = async (logFilePath, operation) => {
   }
   
   let release = null;
-  try {
-    // Acquire lock with retries
-    release = await lockfile.lock(logFilePath, { 
-      retries: {
-        retries: 5,
-        minTimeout: 100,
-        maxTimeout: 2000
-      },
-      stale: 10000 // Consider lock stale after 10 seconds
-    });
-    
-    // Perform the operation
-    const result = await operation();
-    
-    // Release lock
-    await release();
-    
-    return result;
-  } catch (error) {
-    // Ensure lock is released even if operation fails
-    if (release) {
-      try {
-        await release();
-      } catch (releaseError) {
-        console.error('Error releasing lock:', releaseError);
+  let retryCount = 0;
+  const maxRetries = 10;
+  
+  while (retryCount < maxRetries) {
+    try {
+      // Acquire lock with retries and exponential backoff
+      release = await lockfile.lock(logFilePath, { 
+        retries: {
+          retries: 5,
+          minTimeout: 100,
+          maxTimeout: 3000,
+          randomize: true
+        },
+        stale: 10000, // Consider lock stale after 10 seconds
+        realpath: false // Disable realpath to avoid issues with symlinks
+      });
+      
+      // Perform the operation
+      const result = await operation();
+      
+      // Release lock
+      await release();
+      
+      return result;
+    } catch (error) {
+      // If we got a lock, try to release it
+      if (release) {
+        try {
+          await release();
+        } catch (releaseError) {
+          console.error('Error releasing lock:', releaseError);
+        }
+        release = null;
       }
+      
+      // If it's a lock error and we haven't exceeded retries, wait and retry
+      if (error.code === 'ELOCKED' && retryCount < maxRetries - 1) {
+        retryCount++;
+        const waitTime = Math.min(1000 * Math.pow(2, retryCount), 10000) + Math.random() * 1000;
+        console.log(`Lock held by another process, retry ${retryCount}/${maxRetries} after ${waitTime}ms`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
+      }
+      
+      // If it's not a lock error or we've exceeded retries, throw the error
+      throw error;
     }
-    throw error;
   }
+  
+  throw new Error(`Failed to acquire lock after ${maxRetries} attempts`);
 };
 
 // Helper to read logs safely with lock
 const readLogsWithLock = async (logFilePath) => {
-  return withFileLock(logFilePath, async () => {
-    const content = fs.readFileSync(logFilePath, 'utf8');
-    try {
-      const logs = JSON.parse(content);
-      return Array.isArray(logs) ? logs : [];
-    } catch {
-      return [];
-    }
-  });
+  return queueFileOperation(logFilePath, () => 
+    withFileLock(logFilePath, async () => {
+      const content = fs.readFileSync(logFilePath, 'utf8');
+      try {
+        const logs = JSON.parse(content);
+        return Array.isArray(logs) ? logs : [];
+      } catch {
+        return [];
+      }
+    })
+  );
 };
 
 // Helper to read and write logs in a single transaction
 const modifyLogs = async (logFilePath, modifier) => {
-  return withFileLock(logFilePath, async () => {
-    // Read current logs
-    const content = fs.readFileSync(logFilePath, 'utf8');
-    let logs;
-    try {
-      logs = JSON.parse(content);
-      logs = Array.isArray(logs) ? logs : [];
-    } catch {
-      logs = [];
-    }
-    
-    // Modify logs
-    const modifiedLogs = await modifier(logs);
-    
-    // Clean old closed entries (older than 24 hours)
-    const now = Date.now();
-    const cleanedLogs = modifiedLogs.filter(entry => {
-      if (entry.state !== 'closed') return true;
-      const ts = new Date(entry.timestamp).getTime();
-      return (now - ts) < 24 * 60 * 60 * 1000;
-    });
-    
-    // Write back
-    fs.writeFileSync(logFilePath, JSON.stringify(cleanedLogs, null, 2));
-    
-    return cleanedLogs;
-  });
+  return queueFileOperation(logFilePath, () =>
+    withFileLock(logFilePath, async () => {
+      // Read current logs
+      const content = fs.readFileSync(logFilePath, 'utf8');
+      let logs;
+      try {
+        logs = JSON.parse(content);
+        logs = Array.isArray(logs) ? logs : [];
+      } catch {
+        logs = [];
+      }
+      
+      // Modify logs
+      const modifiedLogs = await modifier(logs);
+      
+      // Write back (no automatic deletion of closed items)
+      fs.writeFileSync(logFilePath, JSON.stringify(modifiedLogs, null, 2));
+      
+      return modifiedLogs;
+    })
+  );
 };
 
 // POST /log - Accept log entries (requires API key)
@@ -273,7 +319,7 @@ app.get('/log/:applicationId', authenticateApiKey, async (req, res) => {
   }
 });
 
-// GET /log/:applicationId/open - Retrieve only open logs for an application (requires API key)
+// GET /log/:applicationId/open - Retrieve open and revert logs (revert items first)
 app.get('/log/:applicationId/open', authenticateApiKey, async (req, res) => {
   try {
     const { applicationId } = req.params;
@@ -285,11 +331,15 @@ app.get('/log/:applicationId/open', authenticateApiKey, async (req, res) => {
     
     const logs = await readLogsWithLock(logFilePath);
     const openLogs = logs.filter(entry => entry.state === 'open');
+    const revertLogs = logs.filter(entry => entry.state === 'revert');
+    
+    // Combine with revert items first
+    const combinedLogs = [...revertLogs, ...openLogs];
     
     res.json({
       applicationId,
-      totalLogs: openLogs.length,
-      logs: openLogs
+      totalLogs: combinedLogs.length,
+      logs: combinedLogs
     });
   } catch (error) {
     console.error('Error reading logs:', error);
@@ -461,11 +511,11 @@ app.post('/log/:applicationId/:entryId', authenticateApiKey, async (req, res) =>
   }
 });
 
-// PUT /log/:applicationId/:entryId - Set state to done for one entry, add message from LLM
+// PUT /log/:applicationId/:entryId - Set state to done for one entry, add message from LLM and metadata
 app.put('/log/:applicationId/:entryId', authenticateApiKey, async (req, res) => {
   try {
     const { applicationId, entryId } = req.params;
-    const { message, error } = req.body;
+    const { message, error, git_commit, statistics } = req.body;
     const logFilePath = getLogFilePath(applicationId);
     
     if (!fs.existsSync(logFilePath)) {
@@ -476,16 +526,23 @@ app.put('/log/:applicationId/:entryId', authenticateApiKey, async (req, res) => 
     
     await modifyLogs(logFilePath, (logs) => {
       return logs.map(entry => {
-        if (entry.id === entryId && entry.state === 'open') {
+        if (entry.id === entryId && (entry.state === 'open' || entry.state === 'in_progress')) {
           updated = true;
-          return { ...entry, state: 'done', llmMessage: message || error || '' };
+          return { 
+            ...entry, 
+            state: 'done', 
+            llmMessage: message || error || '',
+            git_commit: git_commit || null,
+            statistics: statistics || null,
+            completedAt: new Date().toISOString()
+          };
         }
         return entry;
       });
     });
     
     if (!updated) {
-      return res.status(404).json({ error: 'Log entry not found or not open' });
+      return res.status(404).json({ error: 'Log entry not found or not in open/in_progress state' });
     }
     
     res.json({ success: true, entryId });
