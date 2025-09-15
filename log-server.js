@@ -301,12 +301,11 @@ app.get('/log/:applicationId', authenticateApiKey, async (req, res) => {
   try {
     const { applicationId } = req.params;
     const logFilePath = getLogFilePath(applicationId);
-    
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
+
+    let logs = [];
+    if (fs.existsSync(logFilePath)) {
+      logs = await readLogsWithLock(logFilePath);
     }
-    
-    const logs = await readLogsWithLock(logFilePath);
     
     res.json({
       applicationId,
@@ -324,12 +323,11 @@ app.get('/log/:applicationId/open', authenticateApiKey, async (req, res) => {
   try {
     const { applicationId } = req.params;
     const logFilePath = getLogFilePath(applicationId);
-    
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
+
+    let logs = [];
+    if (fs.existsSync(logFilePath)) {
+      logs = await readLogsWithLock(logFilePath);
     }
-    
-    const logs = await readLogsWithLock(logFilePath);
     const openLogs = logs.filter(entry => entry.state === 'open');
     const revertLogs = logs.filter(entry => entry.state === 'revert');
     
@@ -352,12 +350,11 @@ app.get('/log/:applicationId/done', authenticateApiKey, async (req, res) => {
   try {
     const { applicationId } = req.params;
     const logFilePath = getLogFilePath(applicationId);
-    
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
+
+    let logs = [];
+    if (fs.existsSync(logFilePath)) {
+      logs = await readLogsWithLock(logFilePath);
     }
-    
-    const logs = await readLogsWithLock(logFilePath);
     const doneLogs = logs.filter(entry => entry.state === 'done');
     
     res.json({
@@ -376,12 +373,11 @@ app.get('/log/:applicationId/in-progress', authenticateApiKey, async (req, res) 
   try {
     const { applicationId } = req.params;
     const logFilePath = getLogFilePath(applicationId);
-    
-    if (!fs.existsSync(logFilePath)) {
-      return res.status(404).json({ error: 'No logs found for this application' });
+
+    let logs = [];
+    if (fs.existsSync(logFilePath)) {
+      logs = await readLogsWithLock(logFilePath);
     }
-    
-    const logs = await readLogsWithLock(logFilePath);
     const inProgressLogs = logs.filter(entry => entry.state === 'in_progress');
     
     res.json({
