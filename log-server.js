@@ -715,6 +715,503 @@ app.get('/log/:applicationId/img/:filename', authenticateApiKey, (req, res) => {
   fs.createReadStream(imgPath).pipe(res);
 });
 
+// GET /openapi.json - Serve OpenAPI specification (no auth required)
+app.get('/openapi.json', (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+  const openApiSpec = {
+    openapi: '3.0.0',
+    info: {
+      title: 'LogSink API',
+      version: '1.0.0',
+      description: 'API for managing application logs with screenshots and state management'
+    },
+    servers: [
+      {
+        url: baseUrl,
+        description: 'Current server'
+      }
+    ],
+    components: {
+      securitySchemes: {
+        ApiKeyAuth: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-API-Key'
+        }
+      },
+      schemas: {
+        LogEntry: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            timestamp: { type: 'string', format: 'date-time' },
+            state: {
+              type: 'string',
+              enum: ['open', 'in_progress', 'done', 'closed', 'revert']
+            },
+            level: { type: 'string' },
+            message: { type: 'string' },
+            context: { type: 'object' },
+            screenshots: {
+              type: 'array',
+              items: { type: 'string' }
+            },
+            llmMessage: { type: 'string' },
+            git_commit: { type: 'string', nullable: true },
+            statistics: { type: 'object', nullable: true },
+            startedAt: { type: 'string', format: 'date-time', nullable: true },
+            completedAt: { type: 'string', format: 'date-time', nullable: true }
+          }
+        },
+        Error: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' }
+          }
+        },
+        Success: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+            entryId: { type: 'string' }
+          }
+        }
+      }
+    },
+    security: [
+      { ApiKeyAuth: [] }
+    ],
+    paths: {
+      '/health': {
+        get: {
+          summary: 'Health check',
+          security: [],
+          responses: {
+            '200': {
+              description: 'Service is healthy',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      status: { type: 'string' },
+                      timestamp: { type: 'string', format: 'date-time' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/openapi.json': {
+        get: {
+          summary: 'Get OpenAPI specification',
+          security: [],
+          responses: {
+            '200': {
+              description: 'OpenAPI specification',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/log/{applicationId}': {
+        get: {
+          summary: 'Get all logs for an application',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            },
+            {
+              name: 'state',
+              in: 'query',
+              schema: {
+                type: 'string',
+                enum: ['open', 'in_progress', 'done', 'closed', 'revert']
+              }
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'List of log entries',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'array',
+                    items: { '$ref': '#/components/schemas/LogEntry' }
+                  }
+                }
+              }
+            }
+          }
+        },
+        post: {
+          summary: 'Add a new log entry',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['level', 'message'],
+                  properties: {
+                    level: { type: 'string' },
+                    message: { type: 'string' },
+                    context: { type: 'object' },
+                    screenshots: {
+                      type: 'array',
+                      items: { type: 'string', format: 'base64' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Log entry created',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Success' }
+                }
+              }
+            },
+            '500': {
+              description: 'Server error',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Error' }
+                }
+              }
+            }
+          }
+        },
+        delete: {
+          summary: 'Delete all items for an application',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Items deleted',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Success' }
+                }
+              }
+            },
+            '404': {
+              description: 'No logs found',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Error' }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/log/{applicationId}/closed': {
+        delete: {
+          summary: 'Delete all closed items for an application',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Closed items deleted',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Success' }
+                }
+              }
+            },
+            '404': {
+              description: 'No logs found',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Error' }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/log/{applicationId}/{entryId}': {
+        get: {
+          summary: 'Get a specific log entry',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            },
+            {
+              name: 'entryId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Log entry',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/LogEntry' }
+                }
+              }
+            },
+            '404': {
+              description: 'Log entry not found',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Error' }
+                }
+              }
+            }
+          }
+        },
+        post: {
+          summary: 'Reject implementation (set to open with rejectReason)',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            },
+            {
+              name: 'entryId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    rejectReason: { type: 'string' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Entry reopened',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Success' }
+                }
+              }
+            }
+          }
+        },
+        put: {
+          summary: 'Mark log entry as done with metadata',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            },
+            {
+              name: 'entryId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    message: { type: 'string' },
+                    error: { type: 'string' },
+                    git_commit: { type: 'string' },
+                    statistics: { type: 'object' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Entry marked as done',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Success' }
+                }
+              }
+            }
+          }
+        },
+        delete: {
+          summary: 'Set log entry to closed',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            },
+            {
+              name: 'entryId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Entry closed',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Success' }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/log/{applicationId}/{entryId}/revert': {
+        patch: {
+          summary: 'Set log entry to revert state',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            },
+            {
+              name: 'entryId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Entry set to revert',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Success' }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/log/{applicationId}/{entryId}/in-progress': {
+        patch: {
+          summary: 'Set log entry to in_progress state',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            },
+            {
+              name: 'entryId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Entry set to in_progress',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Success' }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/log/{applicationId}/img/{filename}': {
+        get: {
+          summary: 'Get screenshot image',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            },
+            {
+              name: 'filename',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' }
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Image file',
+              content: {
+                'image/jpeg': {},
+                'image/png': {},
+                'image/gif': {},
+                'image/webp': {}
+              }
+            },
+            '404': {
+              description: 'Image not found',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/Error' }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+
+  res.json(openApiSpec);
+});
+
 // Health check endpoint (no auth required)
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -740,6 +1237,7 @@ Available endpoints:
   DELETE /log/:applicationId                     - Delete all items (requires API key)
   DELETE /log/:applicationId/closed              - Remove all closed items (requires API key)
   DELETE /log/:applicationId/:entryId            - Set log entry to closed (requires API key)
+  GET    /openapi.json                            - OpenAPI/Swagger specification (no auth)
   GET    /health                                  - Health check (no auth)
 
 Authentication:
