@@ -559,7 +559,7 @@ app.delete('/log/:applicationId', authenticateApiKey, async (req, res) => {
     }
 
     // Get all logs to delete associated screenshots
-    const logs = await readLogs(logFilePath);
+    const logs = await readLogsWithLock(logFilePath);
 
     // Delete all associated screenshots
     for (const entry of logs) {
