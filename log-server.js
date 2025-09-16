@@ -548,29 +548,95 @@ app.put('/log/:applicationId/:entryId', authenticateApiKey, async (req, res) => 
   }
 });
 
-// DELETE /log/:applicationId - Remove all closed items from the file
+// DELETE /log/:applicationId - Delete all items from the file
 app.delete('/log/:applicationId', authenticateApiKey, async (req, res) => {
   try {
     const { applicationId } = req.params;
     const logFilePath = getLogFilePath(applicationId);
-    
+
     if (!fs.existsSync(logFilePath)) {
       return res.status(404).json({ error: 'No logs found for this application' });
     }
-    
+
+    // Get all logs to delete associated screenshots
+    const logs = await readLogs(logFilePath);
+
+    // Delete all associated screenshots
+    for (const entry of logs) {
+      if (Array.isArray(entry.screenshots)) {
+        for (const imgFilename of entry.screenshots) {
+          const imgPath = path.join(IMAGES_DIR, imgFilename);
+          if (fs.existsSync(imgPath)) {
+            try {
+              fs.unlinkSync(imgPath);
+            } catch (err) {
+              console.error(`Failed to delete image ${imgFilename}:`, err);
+            }
+          }
+        }
+      }
+    }
+
+    const removedCount = logs.length;
+
+    // Clear all logs
+    await modifyLogs(logFilePath, () => []);
+
+    res.json({ success: true, message: `Deleted all ${removedCount} items for ${applicationId}` });
+  } catch (error) {
+    console.error('Error deleting logs:', error);
+    res.status(500).json({ error: 'Failed to delete logs' });
+  }
+});
+
+// DELETE /log/:applicationId/closed - Remove all closed items from the file
+app.delete('/log/:applicationId/closed', authenticateApiKey, async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const logFilePath = getLogFilePath(applicationId);
+
+    if (!fs.existsSync(logFilePath)) {
+      return res.status(404).json({ error: 'No logs found for this application' });
+    }
+
     let removedCount = 0;
-    
+    const closedEntries = [];
+
     await modifyLogs(logFilePath, (logs) => {
       const initialLength = logs.length;
+
+      // Collect closed entries for screenshot deletion
+      logs.forEach(entry => {
+        if (entry.state === 'closed') {
+          closedEntries.push(entry);
+        }
+      });
+
       const filtered = logs.filter(entry => entry.state !== 'closed');
       removedCount = initialLength - filtered.length;
       return filtered;
     });
-    
+
+    // Delete screenshots of closed entries
+    for (const entry of closedEntries) {
+      if (Array.isArray(entry.screenshots)) {
+        for (const imgFilename of entry.screenshots) {
+          const imgPath = path.join(IMAGES_DIR, imgFilename);
+          if (fs.existsSync(imgPath)) {
+            try {
+              fs.unlinkSync(imgPath);
+            } catch (err) {
+              console.error(`Failed to delete image ${imgFilename}:`, err);
+            }
+          }
+        }
+      }
+    }
+
     res.json({ success: true, message: `Removed ${removedCount} closed items for ${applicationId}` });
   } catch (error) {
-    console.error('Error clearing logs:', error);
-    res.status(500).json({ error: 'Failed to clear logs' });
+    console.error('Error clearing closed logs:', error);
+    res.status(500).json({ error: 'Failed to clear closed logs' });
   }
 });
 
@@ -671,7 +737,8 @@ Available endpoints:
   PATCH  /log/:applicationId/:entryId/in-progress - Set log entry to in_progress (requires API key)
   POST   /log/:applicationId/:entryId            - Reject the implementation (requires API key)
   PUT    /log/:applicationId/:entryId            - Mark log entry as done with metadata (requires API key)
-  DELETE /log/:applicationId                     - Remove all closed items (requires API key)
+  DELETE /log/:applicationId                     - Delete all items (requires API key)
+  DELETE /log/:applicationId/closed              - Remove all closed items (requires API key)
   DELETE /log/:applicationId/:entryId            - Set log entry to closed (requires API key)
   GET    /health                                  - Health check (no auth)
 
