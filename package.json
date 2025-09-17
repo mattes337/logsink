@@ -1,23 +1,40 @@
 {
-  "name": "simple-log-server",
-  "version": "1.0.0",
+  "name": "logsink",
+  "version": "2.0.0",
   "type": "module",
-  "description": "Simple logging server for collecting application logs",
-  "main": "log-server.js",
+  "description": "Advanced logging server with database storage, AI analysis, blacklist filtering, and automated cleanup",
+  "main": "index.js",
   "scripts": {
-    "start": "node log-server.js",
-    "dev": "node --watch log-server.js"
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "migrate": "node src/scripts/migrate.js",
+    "test": "mocha tests/**/*.test.js --timeout 10000",
+    "test:integration": "mocha tests/integration.test.js --timeout 10000"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "better-sqlite3": "^12.2.0",
     "express": "^4.18.2",
+    "node-cron": "^4.2.1",
     "proper-lockfile": "^4.1.2",
+    "sqlite3": "^5.1.7",
     "uuid": "^13.0.0"
   },
   "keywords": [
     "logging",
     "server",
-    "express"
+    "express",
+    "database",
+    "ai",
+    "blacklist",
+    "cleanup",
+    "sqlite"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "chai": "^6.0.1",
+    "mocha": "^11.7.2",
+    "supertest": "^7.1.4"
+  }
 }

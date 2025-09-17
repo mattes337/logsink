@@ -1,22 +1,35 @@
 version: '3.8'
 
 services:
-  log-server:
+  logsink:
     build: .
-    container_name: simple-log-server
+    container_name: logsink-server
     ports:
       - "1234:1234"
     environment:
       - NODE_ENV=production
       - PORT=1234
       - API_KEY=${API_KEY:-super-secret-log-api-key-2024}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_ENABLED=${GEMINI_ENABLED:-false}
+      - BLACKLIST_ENABLED=${BLACKLIST_ENABLED:-true}
+      - CLEANUP_ENABLED=${CLEANUP_ENABLED:-true}
+      - CLEANUP_INTERVAL=${CLEANUP_INTERVAL:-0 2 * * *}
+      - DB_PATH=/app/data/logsink.db
+      - IMAGES_DIR=/app/images
     volumes:
-      - ./logs:/app/logs
-      - ./images:/app/images
+      - logsink_data:/app/data
+      - logsink_images:/app/images
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:1234/health"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:1234/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+volumes:
+  logsink_data:
+    driver: local
+  logsink_images:
+    driver: local
