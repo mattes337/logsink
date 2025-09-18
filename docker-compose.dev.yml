@@ -10,8 +10,10 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD:-logsink}
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     volumes:
-      - ./postgres:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./src/scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${DB_PORT:-5432}:5432"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-logsink} -d ${DB_NAME:-logsink}"]
@@ -19,6 +21,21 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: logsink-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@logsink.com
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
 
   logsink:
     build: .
@@ -48,7 +65,7 @@ services:
       - DB_CONNECTION_TIMEOUT=${DB_CONNECTION_TIMEOUT:-2000}
       - IMAGES_DIR=/app/images
     volumes:
-      - ./images:/app/images
+      - logsink_images:/app/images
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:1234/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
@@ -56,3 +73,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  logsink_images:
+    driver: local
