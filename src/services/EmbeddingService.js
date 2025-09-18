@@ -185,9 +185,13 @@ class EmbeddingService {
         merge_timestamp: new Date().toISOString()
       };
       
+      // Ensure screenshots are arrays before spreading
+      const targetScreenshots = Array.isArray(targetLog.screenshots) ? targetLog.screenshots : [];
+      const sourceScreenshots = Array.isArray(sourceLog.screenshots) ? sourceLog.screenshots : [];
+
       const mergedScreenshots = [
-        ...(targetLog.screenshots || []),
-        ...(sourceLog.screenshots || [])
+        ...targetScreenshots,
+        ...sourceScreenshots
       ];
 
       // Update target log with merged data

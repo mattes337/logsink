@@ -22,6 +22,21 @@ services:
       retries: 5
       start_period: 30s
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: logsink-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@logsink.com
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
   logsink:
     build: .
     container_name: logsink-server
@@ -61,6 +76,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  pgadmin_data:
     driver: local
   logsink_images:
     driver: local
