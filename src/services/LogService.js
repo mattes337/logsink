@@ -72,7 +72,8 @@ class LogService {
     if (existingEntry && existingEntry.state === 'done') {
       // Reopen existing entry
       const mergedContext = { ...existingEntry.context, ...processedContext };
-      const mergedScreenshots = [...(existingEntry.screenshots || []), ...screenshots];
+      const existingScreenshots = Array.isArray(existingEntry.screenshots) ? existingEntry.screenshots : [];
+      const mergedScreenshots = [...existingScreenshots, ...screenshots];
 
       await this.logRepo.reopenExisting(
         existingEntry.id,
@@ -242,7 +243,7 @@ class LogService {
         case 'closed':
           if (log.state !== 'closed') {
             // Delete associated screenshots
-            if (log.screenshots) {
+            if (Array.isArray(log.screenshots)) {
               this.deleteScreenshots(log.screenshots);
             }
             success = await this.logRepo.updateState(entryId, 'closed');
@@ -276,7 +277,7 @@ class LogService {
       }
 
       // Delete associated screenshots
-      if (log.screenshots) {
+      if (Array.isArray(log.screenshots)) {
         this.deleteScreenshots(log.screenshots);
       }
 
@@ -297,7 +298,7 @@ class LogService {
 
       // Delete all screenshots
       for (const log of logs) {
-        if (log.screenshots) {
+        if (Array.isArray(log.screenshots)) {
           this.deleteScreenshots(log.screenshots);
         }
       }
@@ -319,7 +320,7 @@ class LogService {
 
       // Delete screenshots
       for (const log of closedLogs) {
-        if (log.screenshots) {
+        if (Array.isArray(log.screenshots)) {
           this.deleteScreenshots(log.screenshots);
         }
       }
@@ -335,6 +336,11 @@ class LogService {
   }
 
   deleteScreenshots(screenshots) {
+    if (!Array.isArray(screenshots)) {
+      console.warn('deleteScreenshots called with non-array:', screenshots);
+      return;
+    }
+
     for (const imgFilename of screenshots) {
       const imgPath = path.join(config.storage.imagesDir, imgFilename);
       if (fs.existsSync(imgPath)) {

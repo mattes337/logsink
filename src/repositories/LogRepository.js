@@ -158,10 +158,17 @@ class LogRepository {
     }
   }
 
-  async updateToOpen(id, context) {
+  async updateToOpen(id, context, screenshots = null) {
     try {
-      const query = 'UPDATE logs SET state = \'open\', context = $1 WHERE id = $2';
-      const result = await this.pool.query(query, [context || {}, id]);
+      let query, values;
+      if (screenshots !== null) {
+        query = 'UPDATE logs SET state = \'open\', context = $1, screenshots = $2 WHERE id = $3';
+        values = [context || {}, screenshots || [], id];
+      } else {
+        query = 'UPDATE logs SET state = \'open\', context = $1 WHERE id = $2';
+        values = [context || {}, id];
+      }
+      const result = await this.pool.query(query, values);
       return result.rowCount > 0;
     } catch (error) {
       throw new Error(`Failed to update log to open: ${error.message}`);

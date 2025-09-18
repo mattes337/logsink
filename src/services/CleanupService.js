@@ -218,22 +218,23 @@ class CleanupService {
       // Get the log to keep
       const keepLog = await this.logRepo.findById(keepId);
       if (!keepLog) return;
-      
+
+      // Ensure screenshots are arrays before merging
+      const keepScreenshots = Array.isArray(keepLog.screenshots) ? keepLog.screenshots : [];
+      const duplicateScreenshots = Array.isArray(duplicateLog.screenshots) ? duplicateLog.screenshots : [];
+
       // Merge context and screenshots
       const mergedContext = { ...duplicateLog.context, ...keepLog.context };
-      const mergedScreenshots = [...(keepLog.screenshots || []), ...(duplicateLog.screenshots || [])];
-      
-      // Update the kept log with merged data
-      await this.logRepo.updateToOpen(keepId, mergedContext);
+      const mergedScreenshots = [...keepScreenshots, ...duplicateScreenshots];
 
-      // Update screenshots in database (this would need a new method)
-      // For now, we'll just delete the duplicate
+      // Update the kept log with merged data including screenshots
+      await this.logRepo.updateToOpen(keepId, mergedContext, mergedScreenshots);
 
       // Delete the duplicate log
       await this.logRepo.deleteById(duplicateLog.id);
-      
+
       console.log(`Merged duplicate log ${duplicateLog.id} into ${keepId}`);
-      
+
     } catch (error) {
       console.error('Failed to merge duplicate log:', error);
     }
@@ -285,7 +286,8 @@ class CleanupService {
       for (const applicationId of applications) {
         const logs = await this.logRepo.findByApplicationId(applicationId);
         for (const log of logs) {
-          if (log.screenshots) {
+          // Ensure screenshots is an array before iterating
+          if (Array.isArray(log.screenshots)) {
             log.screenshots.forEach(img => referencedImages.add(img));
           }
         }
