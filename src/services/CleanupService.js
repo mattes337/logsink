@@ -104,7 +104,7 @@ class CleanupService {
 
   async removeDuplicatesForApplication(applicationId) {
     try {
-      const logs = this.logRepo.findByApplicationId(applicationId);
+      const logs = await this.logRepo.findByApplicationId(applicationId);
       const duplicateGroups = new Map();
       
       // Group logs by message similarity
@@ -216,7 +216,7 @@ class CleanupService {
   async mergeDuplicateLog(keepId, duplicateLog) {
     try {
       // Get the log to keep
-      const keepLog = this.logRepo.findById(keepId);
+      const keepLog = await this.logRepo.findById(keepId);
       if (!keepLog) return;
       
       // Merge context and screenshots
@@ -224,13 +224,13 @@ class CleanupService {
       const mergedScreenshots = [...(keepLog.screenshots || []), ...(duplicateLog.screenshots || [])];
       
       // Update the kept log with merged data
-      this.logRepo.updateToOpen(keepId, mergedContext);
-      
+      await this.logRepo.updateToOpen(keepId, mergedContext);
+
       // Update screenshots in database (this would need a new method)
       // For now, we'll just delete the duplicate
-      
+
       // Delete the duplicate log
-      this.logRepo.deleteById(duplicateLog.id);
+      await this.logRepo.deleteById(duplicateLog.id);
       
       console.log(`Merged duplicate log ${duplicateLog.id} into ${keepId}`);
       
@@ -251,11 +251,11 @@ class CleanupService {
       const applications = await this.getApplicationsWithLogs();
       
       for (const applicationId of applications) {
-        const logs = this.logRepo.findByApplicationId(applicationId);
-        
+        const logs = await this.logRepo.findByApplicationId(applicationId);
+
         for (const log of logs) {
           if (log.state === 'closed' && log.timestamp < cutoffIso) {
-            this.logRepo.deleteById(log.id);
+            await this.logRepo.deleteById(log.id);
             this.stats.oldLogsRemoved++;
           }
         }
@@ -283,7 +283,7 @@ class CleanupService {
       const referencedImages = new Set();
       
       for (const applicationId of applications) {
-        const logs = this.logRepo.findByApplicationId(applicationId);
+        const logs = await this.logRepo.findByApplicationId(applicationId);
         for (const log of logs) {
           if (log.screenshots) {
             log.screenshots.forEach(img => referencedImages.add(img));
@@ -310,12 +310,10 @@ class CleanupService {
   }
 
   async getApplicationsWithLogs() {
-    // This would need a custom query to get distinct application IDs
-    // For now, we'll use a simple approach
     try {
-      const db = this.logRepo.db;
-      const result = db.prepare('SELECT DISTINCT application_id FROM logs').all();
-      return result.map(row => row.application_id);
+      const pool = this.logRepo.pool;
+      const result = await pool.query('SELECT DISTINCT application_id FROM logs');
+      return result.rows.map(row => row.application_id);
     } catch (error) {
       console.error('Failed to get applications with logs:', error);
       return [];

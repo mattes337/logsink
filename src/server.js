@@ -4,29 +4,53 @@ import databaseManager from './config/database.js';
 import LogService from './services/LogService.js';
 import BlacklistService from './services/BlacklistService.js';
 import CleanupService from './services/CleanupService.js';
+import EmbeddingService from './services/EmbeddingService.js';
+import BackgroundProcessor from './services/BackgroundProcessor.js';
 import createLogRoutes from './routes/logRoutes.js';
 import createBlacklistRoutes from './routes/blacklistRoutes.js';
 import createCleanupRoutes from './routes/cleanupRoutes.js';
+import createEmbeddingRoutes from './routes/embeddingRoutes.js';
 
 const app = express();
 
-// Initialize database
-try {
-  databaseManager.initialize();
-  console.log('✅ Database initialized successfully');
-} catch (error) {
-  console.error('❌ Failed to initialize database:', error);
-  process.exit(1);
+// Initialize database and services
+async function initializeApp() {
+  try {
+    // Initialize database
+    databaseManager.initialize(config.database);
+
+    // Test database connection
+    const isConnected = await databaseManager.testConnection();
+    if (!isConnected) {
+      throw new Error('Database connection test failed');
+    }
+
+    // Create tables
+    await databaseManager.createTables();
+    console.log('✅ Database initialized successfully');
+
+    // Initialize services
+    const blacklistService = new BlacklistService();
+    const cleanupService = new CleanupService();
+    const embeddingService = new EmbeddingService();
+    const backgroundProcessor = new BackgroundProcessor();
+    const logService = new LogService(blacklistService, null, embeddingService);
+
+    blacklistService.initialize();
+    cleanupService.initialize();
+    embeddingService.initialize();
+    backgroundProcessor.initialize();
+    logService.initialize();
+
+    return { blacklistService, cleanupService, logService, embeddingService, backgroundProcessor };
+  } catch (error) {
+    console.error('❌ Failed to initialize application:', error);
+    process.exit(1);
+  }
 }
 
-// Initialize services
-const blacklistService = new BlacklistService();
-const cleanupService = new CleanupService();
-const logService = new LogService(blacklistService);
-
-blacklistService.initialize();
-cleanupService.initialize();
-logService.initialize();
+// Initialize app and get services
+const { blacklistService, cleanupService, logService, embeddingService, backgroundProcessor } = await initializeApp();
 
 // Middleware
 app.use(express.json({ limit: '50mb' }));
@@ -52,18 +76,20 @@ if (config.logging.level === 'debug') {
 app.use('/', createLogRoutes(logService));
 app.use('/', createBlacklistRoutes(blacklistService));
 app.use('/', createCleanupRoutes(cleanupService));
+app.use('/', createEmbeddingRoutes(logService, backgroundProcessor));
 
 // Health check endpoint (no auth required)
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    version: '2.0.0',
+    version: '2.1.0',
     features: {
       database: true,
       blacklist: config.blacklist.enabled,
       cleanup: config.cleanup.enabled,
-      gemini: config.gemini.enabled && !!config.gemini.apiKey
+      gemini: config.gemini.enabled && !!config.gemini.apiKey,
+      embeddings: config.embedding.enabled && !!config.embedding.apiKey
     }
   });
 });
@@ -297,29 +323,32 @@ app.use((req, res) => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n🛑 Shutting down gracefully...');
-  
+
   cleanupService.stop();
+  backgroundProcessor.stop();
   databaseManager.close();
-  
+
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   console.log('\n🛑 Received SIGTERM, shutting down gracefully...');
-  
+
   cleanupService.stop();
+  backgroundProcessor.stop();
   databaseManager.close();
-  
+
   process.exit(0);
 });
 
 // Start server
 const server = app.listen(config.server.port, () => {
-  console.log(`🚀 LogSink v2.0 running on http://${config.server.host}:${config.server.port}`);
-  console.log(`📊 Database: ${config.database.path}`);
+  console.log(`🚀 LogSink v2.1 running on http://${config.server.host}:${config.server.port}`);
+  console.log(`📊 Database: PostgreSQL (${config.database.host}:${config.database.port}/${config.database.name})`);
   console.log(`🖼️  Images: ${config.storage.imagesDir}`);
   console.log(`🔐 API Key: ${config.server.apiKey.substring(0, 4)}...`);
   console.log(`🤖 Gemini AI: ${config.gemini.enabled && config.gemini.apiKey ? 'Enabled' : 'Disabled'}`);
+  console.log(`🧠 Embeddings: ${config.embedding.enabled && config.embedding.apiKey ? 'Enabled' : 'Disabled'}`);
   console.log(`🚫 Blacklist: ${config.blacklist.enabled ? 'Enabled' : 'Disabled'}`);
   console.log(`🧹 Cleanup: ${config.cleanup.enabled ? `Enabled (${config.cleanup.interval})` : 'Disabled'}`);
   console.log(`
@@ -342,7 +371,14 @@ const server = app.listen(config.server.port, () => {
   
   GET    /cleanup/status                         - Get cleanup status
   POST   /cleanup/run                            - Force cleanup
-  
+
+  GET    /embedding/similar/:appId/:entryId      - Find similar logs
+  POST   /embedding/search/:appId                - Search logs by text
+  GET    /embedding/status                       - Get embedding status
+  POST   /embedding/process                      - Force process embeddings
+  POST   /embedding/process/:logId               - Process specific log
+  GET    /embedding/pending                      - Get pending logs
+
   GET    /health                                 - Health check
   GET    /openapi.json                           - API documentation
 

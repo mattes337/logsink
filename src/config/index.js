@@ -19,9 +19,15 @@ class Config {
 
     // Database configuration
     this.database = {
-      path: process.env.DB_PATH || path.join(__dirname, '../../data/logsink.db'),
-      backupInterval: parseInt(process.env.DB_BACKUP_INTERVAL) || 24 * 60 * 60 * 1000, // 24 hours
-      maxBackups: parseInt(process.env.DB_MAX_BACKUPS) || 7
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT) || 5432,
+      name: process.env.DB_NAME || 'logsink',
+      user: process.env.DB_USER || 'logsink',
+      password: process.env.DB_PASSWORD || 'logsink',
+      poolMax: parseInt(process.env.DB_POOL_MAX) || 20,
+      idleTimeout: parseInt(process.env.DB_IDLE_TIMEOUT) || 30000,
+      connectionTimeout: parseInt(process.env.DB_CONNECTION_TIMEOUT) || 2000,
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
     };
 
     // Storage configuration
@@ -38,6 +44,14 @@ class Config {
       maxTokens: parseInt(process.env.GEMINI_MAX_TOKENS) || 8192,
       temperature: parseFloat(process.env.GEMINI_TEMPERATURE) || 0.7,
       enabled: process.env.GEMINI_ENABLED !== 'false'
+    };
+
+    // Gemini Embedding configuration
+    this.embedding = {
+      enabled: process.env.GEMINI_EMBEDDING_ENABLED === 'true',
+      model: process.env.GEMINI_EMBEDDING_MODEL || 'text-embedding-004',
+      similarityThreshold: parseFloat(process.env.GEMINI_SIMILARITY_THRESHOLD) || 0.85,
+      apiKey: process.env.GEMINI_API_KEY || ''
     };
 
     // Cleanup service configuration
@@ -104,6 +118,23 @@ class Config {
       if (!this.server.apiKey || this.server.apiKey === 'your-secret-api-key') {
         errors.push('API_KEY must be set to a secure value');
       }
+    }
+
+    // Database validation
+    if (!this.database.host) {
+      errors.push('DB_HOST is required');
+    }
+    if (!this.database.name) {
+      errors.push('DB_NAME is required');
+    }
+    if (!this.database.user) {
+      errors.push('DB_USER is required');
+    }
+    if (!this.database.password) {
+      errors.push('DB_PASSWORD is required');
+    }
+    if (this.database.port < 1 || this.database.port > 65535) {
+      errors.push('DB_PORT must be between 1 and 65535');
     }
 
     // Disable Gemini if no API key provided

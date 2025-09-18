@@ -1,9 +1,33 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: logsink-postgres
+    environment:
+      - POSTGRES_DB=${DB_NAME:-logsink}
+      - POSTGRES_USER=${DB_USER:-logsink}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-logsink}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-logsink} -d ${DB_NAME:-logsink}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   logsink:
     build: .
     container_name: logsink-server
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "1234:1234"
     environment:
@@ -12,13 +36,20 @@ services:
       - API_KEY=${API_KEY:-super-secret-log-api-key-2024}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_ENABLED=${GEMINI_ENABLED:-false}
+      - GEMINI_EMBEDDING_ENABLED=${GEMINI_EMBEDDING_ENABLED:-false}
       - BLACKLIST_ENABLED=${BLACKLIST_ENABLED:-true}
       - CLEANUP_ENABLED=${CLEANUP_ENABLED:-true}
       - CLEANUP_INTERVAL=${CLEANUP_INTERVAL:-0 2 * * *}
-      - DB_PATH=/app/data/logsink.db
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-logsink}
+      - DB_USER=${DB_USER:-logsink}
+      - DB_PASSWORD=${DB_PASSWORD:-logsink}
+      - DB_POOL_MAX=${DB_POOL_MAX:-20}
+      - DB_IDLE_TIMEOUT=${DB_IDLE_TIMEOUT:-30000}
+      - DB_CONNECTION_TIMEOUT=${DB_CONNECTION_TIMEOUT:-2000}
       - IMAGES_DIR=/app/images
     volumes:
-      - logsink_data:/app/data
       - logsink_images:/app/images
     restart: unless-stopped
     healthcheck:
@@ -29,7 +60,7 @@ services:
       start_period: 40s
 
 volumes:
-  logsink_data:
+  postgres_data:
     driver: local
   logsink_images:
     driver: local

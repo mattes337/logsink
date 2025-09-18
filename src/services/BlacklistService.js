@@ -19,9 +19,9 @@ class BlacklistService {
 
   async refreshCache() {
     try {
-      const blacklistEntries = this.blacklistRepo.findAll();
+      const blacklistEntries = await this.blacklistRepo.findAll();
       this.cache.clear();
-      
+
       // Group by application ID for faster lookups
       for (const entry of blacklistEntries) {
         const key = entry.applicationId || 'global';
@@ -30,7 +30,7 @@ class BlacklistService {
         }
         this.cache.get(key).push(entry);
       }
-      
+
       this.lastCacheUpdate = Date.now();
       console.log(`Blacklist cache refreshed with ${blacklistEntries.length} entries`);
     } catch (error) {
@@ -143,7 +143,7 @@ class BlacklistService {
 
   async removePattern(id) {
     try {
-      const success = this.blacklistRepo.deleteById(id);
+      const success = await this.blacklistRepo.deleteById(id);
       if (success) {
         await this.refreshCache();
       }
@@ -156,17 +156,17 @@ class BlacklistService {
 
   async updatePattern(id, updates) {
     try {
-      const success = this.blacklistRepo.update(id, updates);
+      const success = await this.blacklistRepo.update(id, updates);
       if (success) {
         await this.refreshCache();
-        
+
         // If auto-delete is enabled and pattern changed, remove matching logs
         if (config.blacklist.autoDelete && (updates.pattern || updates.patternType)) {
-          const entry = this.blacklistRepo.findById(id);
+          const entry = await this.blacklistRepo.findById(id);
           if (entry) {
             await this.removeMatchingLogs(
-              entry.pattern, 
-              entry.patternType, 
+              entry.pattern,
+              entry.patternType,
               entry.applicationId
             );
           }
@@ -182,9 +182,9 @@ class BlacklistService {
   async getPatterns(applicationId = null) {
     try {
       if (applicationId) {
-        return this.blacklistRepo.findByApplicationId(applicationId);
+        return await this.blacklistRepo.findByApplicationId(applicationId);
       } else {
-        return this.blacklistRepo.findAll();
+        return await this.blacklistRepo.findAll();
       }
     } catch (error) {
       console.error('Failed to get blacklist patterns:', error);
@@ -195,13 +195,13 @@ class BlacklistService {
   async removeMatchingLogs(pattern, patternType, applicationId = null) {
     try {
       let removedCount = 0;
-      
+
       if (applicationId) {
         // Remove from specific application
-        const logs = this.logRepo.findByApplicationId(applicationId);
+        const logs = await this.logRepo.findByApplicationId(applicationId);
         for (const log of logs) {
           if (this.matchesPattern(log.message, pattern, patternType)) {
-            this.logRepo.deleteById(log.id);
+            await this.logRepo.deleteById(log.id);
             removedCount++;
           }
         }
@@ -210,7 +210,7 @@ class BlacklistService {
         // For now, we'll skip global removal to avoid performance issues
         console.warn('Global log removal not implemented for performance reasons');
       }
-      
+
       console.log(`Removed ${removedCount} logs matching blacklist pattern: ${pattern}`);
       return removedCount;
     } catch (error) {
@@ -221,8 +221,8 @@ class BlacklistService {
 
   async getStatistics() {
     try {
-      const totalPatterns = this.blacklistRepo.count();
-      const patterns = this.blacklistRepo.findAll();
+      const totalPatterns = await this.blacklistRepo.count();
+      const patterns = await this.blacklistRepo.findAll();
       
       const stats = {
         totalPatterns,

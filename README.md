@@ -1,14 +1,17 @@
-# LogSink v2.0
+# LogSink v2.1
 
-An advanced logging server with database storage, AI analysis, blacklist filtering, and automated cleanup capabilities.
+An advanced logging server with PostgreSQL storage, AI analysis, vector embeddings, intelligent ticket deduplication, blacklist filtering, and automated cleanup capabilities.
 
 ## 🚀 Features
 
 ### Core Features
-- **Database Storage** - SQLite database for reliable log persistence
+- **PostgreSQL Storage** - Robust PostgreSQL database with pgvector support
+- **Vector Embeddings** - Intelligent ticket similarity detection using Gemini embeddings
+- **Smart Deduplication** - Automatic merging of similar tickets using vector similarity
+- **Background Processing** - Asynchronous embedding generation and similarity detection
 - **REST API** - Comprehensive API for log management
 - **Screenshot Support** - Base64 image processing and storage
-- **State Management** - Advanced workflow (open → in_progress → done → revert/closed)
+- **State Management** - Advanced workflow (pending → open → in_progress → done → revert/closed)
 - **API Authentication** - Secure API key-based authentication
 
 ### Advanced Features

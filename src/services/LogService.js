@@ -2,15 +2,17 @@ import { v4 as uuidv4 } from 'uuid';
 import LogRepository from '../repositories/LogRepository.js';
 import BlacklistService from './BlacklistService.js';
 import GeminiService from './GeminiService.js';
+import EmbeddingService from './EmbeddingService.js';
 import config from '../config/index.js';
 import fs from 'fs';
 import path from 'path';
 
 class LogService {
-  constructor(blacklistService = null, geminiService = null) {
+  constructor(blacklistService = null, geminiService = null, embeddingService = null) {
     this.logRepo = new LogRepository();
     this.blacklistService = blacklistService || new BlacklistService();
     this.geminiService = geminiService || new GeminiService();
+    this.embeddingService = embeddingService || new EmbeddingService();
   }
 
   initialize() {
@@ -21,7 +23,10 @@ class LogService {
     if (!this.geminiService.initialized) {
       this.geminiService.initialize();
     }
-    
+    if (!this.embeddingService.isInitialized) {
+      this.embeddingService.initialize();
+    }
+
     // Ensure images directory exists
     if (!fs.existsSync(config.storage.imagesDir)) {
       fs.mkdirSync(config.storage.imagesDir, { recursive: true });
@@ -55,9 +60,9 @@ class LogService {
     processedContext = this.processScreenshots(processedContext, screenshots, applicationId, entryId);
 
     // Check for existing duplicate
-    const existingEntry = this.logRepo.findDuplicateCandidate(
-      applicationId, 
-      message, 
+    const existingEntry = await this.logRepo.findDuplicateCandidate(
+      applicationId,
+      message,
       processedContext
     );
 
@@ -68,18 +73,21 @@ class LogService {
       // Reopen existing entry
       const mergedContext = { ...existingEntry.context, ...processedContext };
       const mergedScreenshots = [...(existingEntry.screenshots || []), ...screenshots];
-      
-      this.logRepo.reopenExisting(
+
+      await this.logRepo.reopenExisting(
         existingEntry.id,
         timestamp || new Date().toISOString(),
         mergedContext,
         mergedScreenshots
       );
-      
-      resultEntry = this.logRepo.findById(existingEntry.id);
+
+      resultEntry = await this.logRepo.findById(existingEntry.id);
       deduplicated = true;
     } else {
       // Create new entry
+      // Use 'pending' state if embeddings are enabled, otherwise 'open'
+      const initialState = config.embedding.enabled ? 'pending' : 'open';
+
       const logEntry = {
         id: entryId,
         applicationId,
@@ -87,7 +95,7 @@ class LogService {
         message,
         context: processedContext,
         screenshots,
-        state: 'open',
+        state: initialState,
         reopenCount: 0
       };
 
@@ -159,7 +167,7 @@ class LogService {
 
   async getAllLogs(applicationId) {
     try {
-      const logs = this.logRepo.findByApplicationId(applicationId);
+      const logs = await this.logRepo.findByApplicationId(applicationId);
       return {
         applicationId,
         totalLogs: logs.length,
@@ -173,13 +181,13 @@ class LogService {
   async getLogsByState(applicationId, state) {
     try {
       let logs;
-      
+
       if (state === 'open') {
-        logs = this.logRepo.findOpenAndRevert(applicationId);
+        logs = await this.logRepo.findOpenAndRevert(applicationId);
       } else {
-        logs = this.logRepo.findByState(applicationId, state);
+        logs = await this.logRepo.findByState(applicationId, state);
       }
-      
+
       return {
         applicationId,
         totalLogs: logs.length,
@@ -192,7 +200,7 @@ class LogService {
 
   async updateLogState(applicationId, entryId, newState, metadata = {}) {
     try {
-      const log = this.logRepo.findById(entryId);
+      const log = await this.logRepo.findById(entryId);
       if (!log || log.applicationId !== applicationId) {
         return { success: false, error: 'Log entry not found' };
       }
@@ -203,13 +211,13 @@ class LogService {
       switch (newState) {
         case 'in_progress':
           if (log.state === 'open' || log.state === 'revert') {
-            success = this.logRepo.updateToInProgress(entryId);
+            success = await this.logRepo.updateToInProgress(entryId);
           }
           break;
 
         case 'done':
           if (log.state === 'open' || log.state === 'in_progress') {
-            success = this.logRepo.updateToDone(
+            success = await this.logRepo.updateToDone(
               entryId,
               metadata.message || metadata.error || '',
               metadata.git_commit || null,
@@ -220,14 +228,14 @@ class LogService {
 
         case 'revert':
           if (log.state === 'done') {
-            success = this.logRepo.updateToRevert(entryId, metadata.revertReason || null);
+            success = await this.logRepo.updateToRevert(entryId, metadata.revertReason || null);
           }
           break;
 
         case 'open':
           if (log.state !== 'open') {
             const newContext = { ...log.context, rejectReason: metadata.rejectReason };
-            success = this.logRepo.updateToOpen(entryId, newContext);
+            success = await this.logRepo.updateToOpen(entryId, newContext);
           }
           break;
 
@@ -237,7 +245,7 @@ class LogService {
             if (log.screenshots) {
               this.deleteScreenshots(log.screenshots);
             }
-            success = this.logRepo.updateState(entryId, 'closed');
+            success = await this.logRepo.updateState(entryId, 'closed');
           }
           break;
 
@@ -246,7 +254,7 @@ class LogService {
       }
 
       if (success) {
-        updatedEntry = this.logRepo.findById(entryId);
+        updatedEntry = await this.logRepo.findById(entryId);
       }
 
       return { 
@@ -262,7 +270,7 @@ class LogService {
 
   async deleteLog(applicationId, entryId) {
     try {
-      const log = this.logRepo.findById(entryId);
+      const log = await this.logRepo.findById(entryId);
       if (!log || log.applicationId !== applicationId) {
         return { success: false, error: 'Log entry not found' };
       }
@@ -272,10 +280,10 @@ class LogService {
         this.deleteScreenshots(log.screenshots);
       }
 
-      const success = this.logRepo.deleteById(entryId);
-      return { 
-        success, 
-        message: `Log entry ${entryId} deleted for ${applicationId}` 
+      const success = await this.logRepo.deleteById(entryId);
+      return {
+        success,
+        message: `Log entry ${entryId} deleted for ${applicationId}`
       };
     } catch (error) {
       throw new Error(`Failed to delete log: ${error.message}`);
@@ -285,8 +293,8 @@ class LogService {
   async deleteAllLogs(applicationId) {
     try {
       // Get all logs to delete screenshots
-      const logs = this.logRepo.findByApplicationId(applicationId);
-      
+      const logs = await this.logRepo.findByApplicationId(applicationId);
+
       // Delete all screenshots
       for (const log of logs) {
         if (log.screenshots) {
@@ -294,7 +302,7 @@ class LogService {
         }
       }
 
-      const removedCount = this.logRepo.deleteByApplicationId(applicationId);
+      const removedCount = await this.logRepo.deleteByApplicationId(applicationId);
       return { 
         success: true, 
         message: `Deleted all ${removedCount} items for ${applicationId}` 
@@ -307,8 +315,8 @@ class LogService {
   async deleteClosedLogs(applicationId) {
     try {
       // Get closed logs to delete screenshots
-      const closedLogs = this.logRepo.findByState(applicationId, 'closed');
-      
+      const closedLogs = await this.logRepo.findByState(applicationId, 'closed');
+
       // Delete screenshots
       for (const log of closedLogs) {
         if (log.screenshots) {
@@ -316,10 +324,10 @@ class LogService {
         }
       }
 
-      const removedCount = this.logRepo.deleteClosedLogs(applicationId);
-      return { 
-        success: true, 
-        message: `Removed ${removedCount} closed items for ${applicationId}` 
+      const removedCount = await this.logRepo.deleteClosedLogs(applicationId);
+      return {
+        success: true,
+        message: `Removed ${removedCount} closed items for ${applicationId}`
       };
     } catch (error) {
       throw new Error(`Failed to delete closed logs: ${error.message}`);
@@ -360,7 +368,7 @@ class LogService {
 
   async getStatistics(applicationId) {
     try {
-      return this.logRepo.getStatistics(applicationId);
+      return await this.logRepo.getStatistics(applicationId);
     } catch (error) {
       throw new Error(`Failed to get statistics: ${error.message}`);
     }
@@ -373,7 +381,7 @@ class LogService {
     }
 
     try {
-      const log = this.logRepo.findById(entryId);
+      const log = await this.logRepo.findById(entryId);
       if (!log || log.applicationId !== applicationId) {
         throw new Error('Log entry not found');
       }
@@ -390,7 +398,7 @@ class LogService {
     }
 
     try {
-      const log = this.logRepo.findById(entryId);
+      const log = await this.logRepo.findById(entryId);
       if (!log || log.applicationId !== applicationId) {
         throw new Error('Log entry not found');
       }
@@ -407,10 +415,46 @@ class LogService {
     }
 
     try {
-      const logs = this.logRepo.findByApplicationId(applicationId);
+      const logs = await this.logRepo.findByApplicationId(applicationId);
       return await this.geminiService.generateLogSummary(logs);
     } catch (error) {
       throw new Error(`Failed to generate summary: ${error.message}`);
+    }
+  }
+
+  // Embedding-powered features
+  async findSimilarLogs(applicationId, entryId, limit = 10) {
+    if (!this.embeddingService.isAvailable()) {
+      throw new Error('Embedding service not available');
+    }
+
+    try {
+      const log = await this.logRepo.findById(entryId);
+      if (!log || log.applicationId !== applicationId) {
+        throw new Error('Log entry not found');
+      }
+
+      if (!log.embedding) {
+        throw new Error('Log has no embedding - similarity search not available');
+      }
+
+      const embedding = JSON.parse(log.embedding);
+      return await this.embeddingService.findSimilarLogs(embedding, applicationId, limit);
+    } catch (error) {
+      throw new Error(`Failed to find similar logs: ${error.message}`);
+    }
+  }
+
+  async searchByText(applicationId, searchText, limit = 10) {
+    if (!this.embeddingService.isAvailable()) {
+      throw new Error('Embedding service not available');
+    }
+
+    try {
+      const embedding = await this.embeddingService.generateEmbedding(searchText);
+      return await this.embeddingService.findSimilarLogs(embedding, applicationId, limit, 0.5);
+    } catch (error) {
+      throw new Error(`Failed to search by text: ${error.message}`);
     }
   }
 }

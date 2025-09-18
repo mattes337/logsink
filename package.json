@@ -1,23 +1,24 @@
 {
   "name": "logsink",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
-  "description": "Advanced logging server with database storage, AI analysis, blacklist filtering, and automated cleanup",
+  "description": "Advanced logging server with PostgreSQL storage, AI analysis, vector embeddings, intelligent ticket deduplication, blacklist filtering, and automated cleanup",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
     "migrate": "node src/scripts/migrate.js",
+    "migrate:postgres": "node src/scripts/migrate-to-postgres.js",
+    "migrate:embeddings": "node src/scripts/migrate-add-embeddings.js",
     "test": "mocha tests/**/*.test.js --timeout 10000",
     "test:integration": "mocha tests/integration.test.js --timeout 10000"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "better-sqlite3": "^12.2.0",
     "express": "^4.18.2",
     "node-cron": "^4.2.1",
+    "pg": "^8.12.0",
     "proper-lockfile": "^4.1.2",
-    "sqlite3": "^5.1.7",
     "uuid": "^13.0.0"
   },
   "keywords": [
@@ -28,7 +29,7 @@
     "ai",
     "blacklist",
     "cleanup",
-    "sqlite"
+    "postgresql"
   ],
   "author": "",
   "license": "MIT",
