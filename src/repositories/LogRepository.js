@@ -12,15 +12,16 @@ class LogRepository {
   async create(logData) {
     const {
       id, applicationId, timestamp, message, context,
-      screenshots, state = 'open', reopenCount = 0
+      screenshots, state = 'open', reopenCount = 0,
+      plan, type = 'feature', effort = 'medium', llmOutput
     } = logData;
 
     try {
       const query = `
         INSERT INTO logs (
           id, application_id, timestamp, message, context, screenshots,
-          state, reopen_count
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          state, reopen_count, plan, type, effort, llm_output
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *
       `;
 
@@ -32,7 +33,11 @@ class LogRepository {
         context || {},
         screenshots || [],
         state,
-        reopenCount
+        reopenCount,
+        plan,
+        type,
+        effort,
+        llmOutput
       ];
 
       const result = await this.pool.query(query, values);
@@ -191,6 +196,54 @@ class LogRepository {
     }
   }
 
+  async updatePlan(id, plan) {
+    try {
+      const query = 'UPDATE logs SET plan = $1, updated_at = NOW() WHERE id = $2';
+      const result = await this.pool.query(query, [plan, id]);
+      return result.rowCount > 0;
+    } catch (error) {
+      throw new Error(`Failed to update log plan: ${error.message}`);
+    }
+  }
+
+  async updateIssueFields(id, fields) {
+    try {
+      const updateFields = [];
+      const values = [];
+      let paramIndex = 1;
+
+      if (fields.plan !== undefined) {
+        updateFields.push(`plan = $${paramIndex++}`);
+        values.push(fields.plan);
+      }
+      if (fields.type !== undefined) {
+        updateFields.push(`type = $${paramIndex++}`);
+        values.push(fields.type);
+      }
+      if (fields.effort !== undefined) {
+        updateFields.push(`effort = $${paramIndex++}`);
+        values.push(fields.effort);
+      }
+      if (fields.llmOutput !== undefined) {
+        updateFields.push(`llm_output = $${paramIndex++}`);
+        values.push(fields.llmOutput);
+      }
+
+      if (updateFields.length === 0) {
+        throw new Error('No fields to update');
+      }
+
+      updateFields.push(`updated_at = NOW()`);
+      values.push(id);
+
+      const query = `UPDATE logs SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`;
+      const result = await this.pool.query(query, values);
+      return result.rowCount > 0;
+    } catch (error) {
+      throw new Error(`Failed to update issue fields: ${error.message}`);
+    }
+  }
+
   async deleteById(id) {
     try {
       const query = 'DELETE FROM logs WHERE id = $1';
@@ -281,6 +334,10 @@ class LogRepository {
       revertReason: row.revert_reason,
       embedding: row.embedding,
       embeddingModel: row.embedding_model,
+      plan: row.plan,
+      type: row.type,
+      effort: row.effort,
+      llmOutput: row.llm_output,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };

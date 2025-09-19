@@ -4,6 +4,8 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: logsink-postgres
+    ports:
+      - "5432:5432"
     environment:
       - POSTGRES_DB=${DB_NAME:-logsink}
       - POSTGRES_USER=${DB_USER:-logsink}

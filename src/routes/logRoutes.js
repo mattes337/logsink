@@ -53,6 +53,18 @@ router.get('/log/:applicationId', authenticateApiKey, async (req, res) => {
   }
 });
 
+// GET /log/:applicationId/pending - Retrieve pending logs
+router.get('/log/:applicationId/pending', authenticateApiKey, async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const result = await logService.getLogsByState(applicationId, 'pending');
+    res.json(result);
+  } catch (error) {
+    console.error('Error reading logs:', error);
+    res.status(500).json({ error: 'Failed to read logs' });
+  }
+});
+
 // GET /log/:applicationId/open - Retrieve open and revert logs
 router.get('/log/:applicationId/open', authenticateApiKey, async (req, res) => {
   try {
@@ -108,17 +120,19 @@ router.patch('/log/:applicationId/:entryId/revert', authenticateApiKey, async (r
   }
 });
 
+
+
 // PATCH /log/:applicationId/:entryId/in-progress - Set state to in_progress
 router.patch('/log/:applicationId/:entryId/in-progress', authenticateApiKey, async (req, res) => {
   try {
     const { applicationId, entryId } = req.params;
 
     const result = await logService.updateLogState(applicationId, entryId, 'in_progress');
-    
+
     if (!result.success) {
       return res.status(404).json({ error: result.error || 'Log entry not found or not in open/revert state' });
     }
-    
+
     res.json(result);
   } catch (error) {
     console.error('Error updating log entry to in_progress:', error);
@@ -294,6 +308,58 @@ router.post('/log/:applicationId/summary', authenticateApiKey, async (req, res) 
   } catch (error) {
     console.error('Error generating summary:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /log/:applicationId/:entryId/plan - Set implementation plan for an issue
+router.patch('/log/:applicationId/:entryId/plan', authenticateApiKey, async (req, res) => {
+  try {
+    const { applicationId, entryId } = req.params;
+    const { plan } = req.body;
+
+    if (!plan) {
+      return res.status(400).json({ error: 'Plan is required' });
+    }
+
+    const result = await logService.updatePlan(applicationId, entryId, plan);
+
+    if (!result.success) {
+      return res.status(404).json({ error: result.error || 'Log entry not found' });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error updating plan:', error);
+    res.status(500).json({ error: 'Failed to update plan' });
+  }
+});
+
+// PATCH /log/:applicationId/:entryId/issue-fields - Update issue-specific fields
+router.patch('/log/:applicationId/:entryId/issue-fields', authenticateApiKey, async (req, res) => {
+  try {
+    const { applicationId, entryId } = req.params;
+    const { plan, type, effort, llmOutput } = req.body;
+
+    const fields = {};
+    if (plan !== undefined) fields.plan = plan;
+    if (type !== undefined) fields.type = type;
+    if (effort !== undefined) fields.effort = effort;
+    if (llmOutput !== undefined) fields.llmOutput = llmOutput;
+
+    if (Object.keys(fields).length === 0) {
+      return res.status(400).json({ error: 'At least one field (plan, type, effort, llmOutput) is required' });
+    }
+
+    const result = await logService.updateIssueFields(applicationId, entryId, fields);
+
+    if (!result.success) {
+      return res.status(404).json({ error: result.error || 'Log entry not found' });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error updating issue fields:', error);
+    res.status(500).json({ error: 'Failed to update issue fields' });
   }
 });
 

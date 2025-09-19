@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import config from './config/index.js';
 import databaseManager from './config/database.js';
@@ -129,7 +130,7 @@ app.get('/openapi.json', (req, res) => {
             message: { type: 'string' },
             context: { type: 'object' },
             screenshots: { type: 'array', items: { type: 'string' } },
-            state: { type: 'string', enum: ['open', 'in_progress', 'done', 'closed', 'revert'] },
+            state: { type: 'string', enum: ['pending', 'in_planning', 'open', 'in_progress', 'done', 'closed', 'revert'] },
             llmMessage: { type: 'string' },
             gitCommit: { type: 'string', nullable: true },
             statistics: { type: 'object', nullable: true },
@@ -137,6 +138,10 @@ app.get('/openapi.json', (req, res) => {
             startedAt: { type: 'string', format: 'date-time', nullable: true },
             completedAt: { type: 'string', format: 'date-time', nullable: true },
             reopenedAt: { type: 'string', format: 'date-time', nullable: true },
+            plan: { type: 'string', nullable: true, description: 'Markdown implementation plan created by agent' },
+            type: { type: 'string', enum: ['bugfix', 'feature', 'documentation'], default: 'feature', description: 'Issue type classification' },
+            effort: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], default: 'medium', description: 'Effort estimation' },
+            llmOutput: { type: 'string', nullable: true, description: 'Complete LLM output log' },
             revertedAt: { type: 'string', format: 'date-time', nullable: true },
             revertReason: { type: 'string', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
@@ -355,6 +360,7 @@ const server = app.listen(config.server.port, () => {
 📋 Available endpoints:
   POST   /log                                    - Create log entries
   GET    /log/:applicationId                     - Get all logs
+  GET    /log/:applicationId/pending             - Get pending logs
   GET    /log/:applicationId/open                - Get open/revert logs
   GET    /log/:applicationId/done                - Get done logs
   GET    /log/:applicationId/in-progress         - Get in-progress logs
@@ -362,6 +368,8 @@ const server = app.listen(config.server.port, () => {
   POST   /log/:applicationId/:entryId/analyze    - AI analysis (if enabled)
   POST   /log/:applicationId/:entryId/suggest    - AI suggestions (if enabled)
   POST   /log/:applicationId/summary             - AI summary (if enabled)
+  PATCH  /log/:applicationId/:entryId/plan      - Set implementation plan
+  PATCH  /log/:applicationId/:entryId/issue-fields - Update issue fields (plan, type, effort, llmOutput)
   
   GET    /blacklist                              - Get blacklist patterns
   POST   /blacklist                              - Add blacklist pattern

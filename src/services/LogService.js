@@ -34,8 +34,11 @@ class LogService {
   }
 
   async createLogEntry(logData) {
-    const { applicationId, timestamp, message, context } = logData;
-    
+    const {
+      applicationId, timestamp, message, context,
+      plan, type = 'feature', effort = 'medium', llmOutput
+    } = logData;
+
     if (!applicationId || !message) {
       throw new Error('applicationId and message are required');
     }
@@ -86,8 +89,8 @@ class LogService {
       deduplicated = true;
     } else {
       // Create new entry
-      // Use 'pending' state if embeddings are enabled, otherwise 'open'
-      const initialState = config.embedding.enabled ? 'pending' : 'open';
+      // Always start with 'pending' state
+      const initialState = 'pending';
 
       const logEntry = {
         id: entryId,
@@ -97,7 +100,11 @@ class LogService {
         context: processedContext,
         screenshots,
         state: initialState,
-        reopenCount: 0
+        reopenCount: 0,
+        plan,
+        type,
+        effort,
+        llmOutput
       };
 
       resultEntry = await this.logRepo.create(logEntry);
@@ -210,6 +217,14 @@ class LogService {
       let updatedEntry = null;
 
       switch (newState) {
+        case 'open':
+          // Can move to open from pending (when plan is set) or from other states
+          if (log.state !== 'open') {
+            const newContext = { ...log.context, rejectReason: metadata.rejectReason };
+            success = await this.logRepo.updateToOpen(entryId, newContext);
+          }
+          break;
+
         case 'in_progress':
           if (log.state === 'open' || log.state === 'revert') {
             success = await this.logRepo.updateToInProgress(entryId);
@@ -230,13 +245,6 @@ class LogService {
         case 'revert':
           if (log.state === 'done') {
             success = await this.logRepo.updateToRevert(entryId, metadata.revertReason || null);
-          }
-          break;
-
-        case 'open':
-          if (log.state !== 'open') {
-            const newContext = { ...log.context, rejectReason: metadata.rejectReason };
-            success = await this.logRepo.updateToOpen(entryId, newContext);
           }
           break;
 
@@ -461,6 +469,65 @@ class LogService {
       return await this.embeddingService.findSimilarLogs(embedding, applicationId, limit, 0.5);
     } catch (error) {
       throw new Error(`Failed to search by text: ${error.message}`);
+    }
+  }
+
+  async updatePlan(applicationId, entryId, plan) {
+    try {
+      const log = await this.logRepo.findById(entryId);
+      if (!log || log.applicationId !== applicationId) {
+        return { success: false, error: 'Log entry not found' };
+      }
+
+      const success = await this.logRepo.updatePlan(entryId, plan);
+      if (!success) {
+        return { success: false, error: 'Failed to update plan' };
+      }
+
+      // If the log is in 'pending' state, automatically move it to 'open'
+      let stateTransition = null;
+      if (log.state === 'pending') {
+        await this.logRepo.updateState(entryId, 'open');
+        stateTransition = 'pending -> open';
+      }
+
+      const updatedLog = await this.logRepo.findById(entryId);
+      return {
+        success: true,
+        log: updatedLog,
+        stateTransition
+      };
+    } catch (error) {
+      throw new Error(`Failed to update plan: ${error.message}`);
+    }
+  }
+
+  async updateIssueFields(applicationId, entryId, fields) {
+    try {
+      const log = await this.logRepo.findById(entryId);
+      if (!log || log.applicationId !== applicationId) {
+        return { success: false, error: 'Log entry not found' };
+      }
+
+      // Validate type field if provided
+      if (fields.type && !['bugfix', 'feature', 'documentation'].includes(fields.type)) {
+        return { success: false, error: 'Invalid type. Must be one of: bugfix, feature, documentation' };
+      }
+
+      // Validate effort field if provided
+      if (fields.effort && !['low', 'medium', 'high', 'critical'].includes(fields.effort)) {
+        return { success: false, error: 'Invalid effort. Must be one of: low, medium, high, critical' };
+      }
+
+      const success = await this.logRepo.updateIssueFields(entryId, fields);
+      if (!success) {
+        return { success: false, error: 'Failed to update issue fields' };
+      }
+
+      const updatedLog = await this.logRepo.findById(entryId);
+      return { success: true, log: updatedLog };
+    } catch (error) {
+      throw new Error(`Failed to update issue fields: ${error.message}`);
     }
   }
 }

@@ -75,8 +75,8 @@ class BackgroundProcessor {
         } catch (error) {
           console.error(`Failed to process log ${log.id}:`, error);
           this.stats.errors++;
-          // Move log to open state if embedding fails
-          await this.embeddingService.updateLogState(log.id, 'open');
+          // Keep log in pending state if embedding fails
+          // No state change needed - stays pending until plan is set
         } finally {
           this.processingQueue.delete(log.id);
         }
@@ -134,9 +134,9 @@ class BackgroundProcessor {
         }
       }
       
-      // No merge candidate found, save embedding and set to open
+      // No merge candidate found, save embedding but keep in pending state
       await this.embeddingService.saveEmbedding(log.id, embedding);
-      await this.embeddingService.updateLogState(log.id, 'open');
+      // Keep in pending state until plan is set
       
     } catch (error) {
       console.error(`Failed to process embedding for log ${log.id}:`, error);
@@ -150,7 +150,7 @@ class BackgroundProcessor {
     }
     
     // Find the most similar log that's in a state we can merge with
-    const mergeableStates = ['open', 'in_progress', 'done'];
+    const mergeableStates = ['pending', 'open', 'in_progress', 'done'];
     
     for (const log of similarLogs) {
       if (mergeableStates.includes(log.state) && 

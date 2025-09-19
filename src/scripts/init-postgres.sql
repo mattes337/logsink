@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS logs (
   message TEXT NOT NULL,
   context JSONB DEFAULT '{}',
   screenshots JSONB DEFAULT '[]',
-  state VARCHAR(50) NOT NULL DEFAULT 'open',
+  state VARCHAR(50) NOT NULL DEFAULT 'pending',
   llm_message TEXT,
   git_commit VARCHAR(255),
   statistics JSONB DEFAULT '{}',
@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS logs (
   revert_reason TEXT,
   embedding vector(768),
   embedding_model VARCHAR(100),
+  plan TEXT,
+  type VARCHAR(50) DEFAULT 'feature' CHECK (type IN ('bugfix', 'feature', 'documentation')),
+  effort VARCHAR(50) DEFAULT 'medium' CHECK (effort IN ('low', 'medium', 'high', 'critical')),
+  llm_output TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -68,6 +72,8 @@ CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
 CREATE INDEX IF NOT EXISTS idx_logs_message ON logs USING gin(to_tsvector('english', message));
 CREATE INDEX IF NOT EXISTS idx_logs_context ON logs USING gin(context);
 CREATE INDEX IF NOT EXISTS idx_logs_embedding ON logs USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_logs_type ON logs(type);
+CREATE INDEX IF NOT EXISTS idx_logs_effort ON logs(effort);
 CREATE INDEX IF NOT EXISTS idx_blacklist_application_id ON blacklist(application_id);
 CREATE INDEX IF NOT EXISTS idx_blacklist_pattern ON blacklist(pattern);
 CREATE INDEX IF NOT EXISTS idx_duplicates_original ON duplicates(original_log_id);
