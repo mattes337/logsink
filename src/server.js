@@ -359,6 +359,7 @@ const server = app.listen(config.server.port, () => {
   console.log(`
 📋 Available endpoints:
   POST   /log                                    - Create log entries
+  POST   /log/:applicationId                     - Create log entries with applicationId in URL
   GET    /log/:applicationId                     - Get all logs
   GET    /log/:applicationId/pending             - Get pending logs
   GET    /log/:applicationId/open                - Get open/revert logs

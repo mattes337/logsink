@@ -22,7 +22,7 @@ const authenticateApiKey = (req, res, next) => {
 router.post('/log', authenticateApiKey, async (req, res) => {
   try {
     const result = await logService.createLogEntry(req.body);
-    
+
     if (!result.success) {
       if (result.blocked) {
         return res.status(403).json({
@@ -33,7 +33,38 @@ router.post('/log', authenticateApiKey, async (req, res) => {
       }
       return res.status(400).json({ error: 'Failed to create log entry' });
     }
-    
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error creating log entry:', error);
+    res.status(500).json({ error: 'Failed to create log entry' });
+  }
+});
+
+// POST /log/:applicationId - Accept log entries with applicationId in URL (requires API key)
+router.post('/log/:applicationId', authenticateApiKey, async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+
+    // Merge applicationId from URL params with request body
+    const logData = {
+      ...req.body,
+      applicationId
+    };
+
+    const result = await logService.createLogEntry(logData);
+
+    if (!result.success) {
+      if (result.blocked) {
+        return res.status(403).json({
+          error: 'Log entry blocked by blacklist',
+          reason: result.reason,
+          pattern: result.pattern
+        });
+      }
+      return res.status(400).json({ error: 'Failed to create log entry' });
+    }
+
     res.status(200).json(result);
   } catch (error) {
     console.error('Error creating log entry:', error);
