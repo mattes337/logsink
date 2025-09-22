@@ -228,6 +228,41 @@ app.get('/openapi.json', (req, res) => {
           }
         }
       },
+      '/log/{applicationId}': {
+        post: {
+          summary: 'Create a new log entry with applicationId in URL',
+          parameters: [
+            {
+              name: 'applicationId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Application identifier'
+            }
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['message'],
+                  properties: {
+                    timestamp: { type: 'string', format: 'date-time' },
+                    message: { type: 'string' },
+                    context: { type: 'object' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': { description: 'Log entry created successfully' },
+            '403': { description: 'Log entry blocked by blacklist' },
+            '500': { description: 'Server error' }
+          }
+        }
+      },
       '/blacklist': {
         get: {
           summary: 'Get all blacklist patterns',
