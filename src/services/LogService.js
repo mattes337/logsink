@@ -484,18 +484,13 @@ class LogService {
         return { success: false, error: 'Failed to update plan' };
       }
 
-      // If the log is in 'pending' state, automatically move it to 'open'
-      let stateTransition = null;
-      if (log.state === 'pending') {
-        await this.logRepo.updateState(entryId, 'open');
-        stateTransition = 'pending -> open';
-      }
+      // Note: pending -> open transition is now handled by the embedding processor
+      // Plans can be set/updated on logs in any state (open, in_progress, etc.)
 
       const updatedLog = await this.logRepo.findById(entryId);
       return {
         success: true,
-        log: updatedLog,
-        stateTransition
+        log: updatedLog
       };
     } catch (error) {
       throw new Error(`Failed to update plan: ${error.message}`);

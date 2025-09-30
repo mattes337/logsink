@@ -34,7 +34,7 @@ class BackgroundProcessor {
     }
 
     // Run every 2 minutes to process pending embeddings
-    this.cronJob = cron.schedule('*/2 * * * *', async () => {
+    this.cronJob = cron.schedule('*/10 * * * * *', async () => {
       await this.processEmbeddings();
     }, {
       scheduled: true,
@@ -76,7 +76,7 @@ class BackgroundProcessor {
           console.error(`Failed to process log ${log.id}:`, error);
           this.stats.errors++;
           // Keep log in pending state if embedding fails
-          // No state change needed - stays pending until plan is set
+          // Will retry on next background processing run
         } finally {
           this.processingQueue.delete(log.id);
         }
@@ -107,37 +107,40 @@ class BackgroundProcessor {
       const text = this.embeddingService.formatTextForEmbedding(log);
       const embedding = await this.embeddingService.generateEmbedding(text);
       this.stats.embeddings_generated++;
-      
+
       // Find similar logs
       const similarLogs = await this.embeddingService.findSimilarLogs(
-        embedding, 
-        log.application_id, 
-        5, 
+        embedding,
+        log.application_id,
+        5,
         config.embedding.similarityThreshold
       );
-      
+
       // Check if we should merge with an existing log
       const mergeCandidate = this.findBestMergeCandidate(similarLogs);
-      
+
       if (mergeCandidate) {
         // Merge the pending log into the existing one
         const merged = await this.embeddingService.mergeLogs(
-          log.id, 
-          mergeCandidate.id, 
+          log.id,
+          mergeCandidate.id,
           `Similarity score: ${mergeCandidate.similarity_score.toFixed(3)}`
         );
-        
+
         if (merged) {
           this.stats.logs_merged++;
           console.log(`Merged log ${log.id} into ${mergeCandidate.id} (similarity: ${mergeCandidate.similarity_score.toFixed(3)})`);
           return;
         }
       }
-      
-      // No merge candidate found, save embedding but keep in pending state
+
+      // No merge candidate found, save embedding and move to open state
       await this.embeddingService.saveEmbedding(log.id, embedding);
-      // Keep in pending state until plan is set
-      
+
+      // Automatically move from pending to open after embedding is complete
+      await this.embeddingService.updateLogState(log.id, 'open');
+      console.log(`Log ${log.id} embedded and moved to open state`);
+
     } catch (error) {
       console.error(`Failed to process embedding for log ${log.id}:`, error);
       throw error;

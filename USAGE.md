@@ -335,9 +335,9 @@ curl http://localhost:3000/openapi.json
 
 ## Common Patterns
 
-### Complete workflow example (New Planning Lifecycle)
+### Complete workflow example (Embedding-based Lifecycle)
 ```bash
-# 1. Create a log entry with issue management fields (starts in pending)
+# 1. Create a log entry with issue management fields (starts in pending for embedding)
 ENTRY_ID=$(curl -X POST http://localhost:3000/log \
   -H "Content-Type: application/json" \
   -H "X-API-Key: YOUR_API_KEY" \
@@ -346,9 +346,17 @@ ENTRY_ID=$(curl -X POST http://localhost:3000/log \
     "message": "Database connection failed",
     "type": "bugfix",
     "effort": "high"
-  }' | jq -r '.id')
+  }' | jq -r '.logged.id')
 
-# 2. Set implementation plan (automatically moves from pending to open)
+# 2. Wait for background processor to embed and move to open state
+# (This happens automatically every 10 seconds, or force it:)
+curl -X POST http://localhost:3000/embedding/process \
+  -H "X-API-Key: YOUR_API_KEY"
+
+# 3. Fetch open issues (after embedding is complete)
+curl -H "X-API-Key: YOUR_API_KEY" http://localhost:3000/log/my-app/open
+
+# 4. Check if plan exists, if not create one
 curl -X PATCH http://localhost:3000/log/my-app/$ENTRY_ID/plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: YOUR_API_KEY" \
@@ -356,15 +364,15 @@ curl -X PATCH http://localhost:3000/log/my-app/$ENTRY_ID/plan \
     "plan": "# Database Fix Plan\n\n1. Check connection pool\n2. Update timeout settings\n3. Test thoroughly"
   }'
 
-# 3. Set to in-progress (now allowed since state is open)
+# 5. Set to in-progress
 curl -X PATCH http://localhost:3000/log/my-app/$ENTRY_ID/in-progress \
   -H "X-API-Key: YOUR_API_KEY"
 
-# 4. Get AI analysis
+# 6. Get AI analysis
 curl -X POST http://localhost:3000/log/my-app/$ENTRY_ID/analyze \
   -H "X-API-Key: YOUR_API_KEY"
 
-# 5. Update with LLM output
+# 7. Update with LLM output
 curl -X PATCH http://localhost:3000/log/my-app/$ENTRY_ID/issue-fields \
   -H "Content-Type: application/json" \
   -H "X-API-Key: YOUR_API_KEY" \
@@ -372,7 +380,7 @@ curl -X PATCH http://localhost:3000/log/my-app/$ENTRY_ID/issue-fields \
     "llmOutput": "AI analysis suggests connection pool exhaustion. Recommend increasing max connections and implementing connection retry logic."
   }'
 
-# 6. Mark as done
+# 8. Mark as done
 curl -X PUT http://localhost:3000/log/my-app/$ENTRY_ID \
   -H "Content-Type: application/json" \
   -H "X-API-Key: YOUR_API_KEY" \
@@ -399,26 +407,27 @@ curl -X DELETE http://localhost:3000/log/my-app/closed \
 ## Issue Management Field Reference
 
 ### Issue Lifecycle States
-The new planning-focused lifecycle follows this flow:
+The lifecycle follows this flow:
 ```
-create → (pending) → set plan → (open) → start progress → (in_progress) → set done → (done)
-                                           ↓
-                                        closed
+create → (pending - embedding only) → (open) → start progress → (in_progress) → set done → (done)
+                                                  ↓
+                                               closed
 ```
 
 **State Descriptions:**
-- `pending` - Initial state for all new issues (awaiting implementation plan)
-- `open` - Issue has a plan and is ready for development work
+- `pending` - Initial state for embedding processing ONLY (automatic background process)
+- `open` - Issue is ready for development work (automatically set after embedding completes)
 - `in_progress` - Issue is actively being worked on
 - `done` - Issue has been completed
 - `closed` - Issue has been archived
 - `revert` - Issue was completed but reverted due to problems
 
 **Key Transitions:**
-- All issues start in `pending` state
-- Setting an implementation plan automatically moves from `pending` → `open`
+- All issues start in `pending` state for embedding processing
+- Background processor automatically moves from `pending` → `open` after embedding is complete
+- Agents should fetch from `/open` endpoint, not `/pending`
+- If an open issue has no plan, create one using PATCH `/plan` endpoint
 - Can only move to `in_progress` from `open` or `revert` states
-- Agent must set plan before development can begin
 
 ### Issue Types
 - `bugfix` - Bug fixes and error corrections
