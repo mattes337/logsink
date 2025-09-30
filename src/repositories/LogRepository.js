@@ -47,14 +47,18 @@ class LogRepository {
     }
   }
 
-  async findById(id) {
+  async findById(id, options = {}) {
     try {
       const query = 'SELECT * FROM logs WHERE id = $1';
       const result = await this.pool.query(query, [id]);
-      return result.rows.length > 0 ? this.transformRow(result.rows[0]) : null;
+      return result.rows.length > 0 ? this.transformRow(result.rows[0], options) : null;
     } catch (error) {
       throw new Error(`Failed to find log by ID: ${error.message}`);
     }
+  }
+
+  async findByIdWithEmbedding(id) {
+    return this.findById(id, { includeEmbedding: true });
   }
 
   async findByApplicationId(applicationId) {
@@ -314,8 +318,10 @@ class LogRepository {
     }
   }
 
-  transformRow(row) {
-    return {
+  transformRow(row, options = {}) {
+    const { includeEmbedding = false } = options;
+
+    const transformed = {
       id: row.id,
       applicationId: row.application_id,
       timestamp: row.timestamp,
@@ -332,8 +338,6 @@ class LogRepository {
       reopenedAt: row.reopened_at,
       revertedAt: row.reverted_at,
       revertReason: row.revert_reason,
-      embedding: row.embedding,
-      embeddingModel: row.embedding_model,
       plan: row.plan,
       type: row.type,
       effort: row.effort,
@@ -341,6 +345,14 @@ class LogRepository {
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
+
+    // Only include embedding if explicitly requested
+    if (includeEmbedding) {
+      transformed.embedding = row.embedding;
+      transformed.embeddingModel = row.embedding_model;
+    }
+
+    return transformed;
   }
 }
 

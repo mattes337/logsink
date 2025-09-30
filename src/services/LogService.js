@@ -443,7 +443,7 @@ class LogService {
     }
 
     try {
-      const log = await this.logRepo.findById(entryId);
+      const log = await this.logRepo.findByIdWithEmbedding(entryId);
       if (!log || log.applicationId !== applicationId) {
         throw new Error('Log entry not found');
       }
