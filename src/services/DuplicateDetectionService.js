@@ -43,7 +43,14 @@ class DuplicateDetectionService {
           method: 'exact_match',
           originalId: exactMatch.id,
           similarity: 1.0,
-          action: 'rejected_obsolete'
+          action: 'rejected_obsolete',
+          matchDetails: {
+            matchType: exactMatch._matchType,
+            originalMessage: exactMatch.message,
+            originalContext: exactMatch.context,
+            originalState: exactMatch.state,
+            originalTimestamp: exactMatch.timestamp
+          }
         };
       }
     }
@@ -75,16 +82,18 @@ class DuplicateDetectionService {
       const messageQuery = `
         SELECT id, message, context, state, timestamp
         FROM logs
-        WHERE application_id = $1 
+        WHERE application_id = $1
           AND message = $2
           AND state NOT IN ('closed', 'revert')
         ORDER BY timestamp DESC
         LIMIT 1
       `;
-      
+
       const messageResult = await this.pool.query(messageQuery, [applicationId, message]);
       if (messageResult.rows.length > 0) {
-        return messageResult.rows[0];
+        const match = messageResult.rows[0];
+        match._matchType = 'message'; // Track what matched
+        return match;
       }
 
       // Check for exact content match (message + context combination)
@@ -93,16 +102,19 @@ class DuplicateDetectionService {
         const contentQuery = `
           SELECT id, message, context, state, timestamp
           FROM logs
-          WHERE application_id = $1 
+          WHERE application_id = $1
             AND (message = $2 OR context::text = $3)
             AND state NOT IN ('closed', 'revert')
           ORDER BY timestamp DESC
           LIMIT 1
         `;
-        
+
         const contentResult = await this.pool.query(contentQuery, [applicationId, message, contextStr]);
         if (contentResult.rows.length > 0) {
-          return contentResult.rows[0];
+          const match = contentResult.rows[0];
+          // Determine if it was message or context that matched
+          match._matchType = match.message === message ? 'message' : 'context';
+          return match;
         }
       }
 
@@ -151,7 +163,14 @@ class DuplicateDetectionService {
           method: 'embedding_high',
           originalId: highSimilarityLog.id,
           similarity: highSimilarityLog.similarity_score,
-          action: 'rejected_obsolete'
+          action: 'rejected_obsolete',
+          matchDetails: {
+            matchType: 'embedding_similarity',
+            originalMessage: highSimilarityLog.message,
+            originalContext: highSimilarityLog.context,
+            originalState: highSimilarityLog.state,
+            originalTimestamp: highSimilarityLog.timestamp
+          }
         };
       }
 
@@ -190,7 +209,7 @@ class DuplicateDetectionService {
       for (let i = 0; i < similarities.length && i < candidateLogs.length; i++) {
         const similarity = similarities[i];
         const candidate = candidateLogs[i];
-        
+
         if (similarity >= config.duplicateDetection.geminiThreshold) {
           await this.recordDuplicate(candidate.id, newLogId, similarity, 'gemini');
           return {
@@ -198,7 +217,14 @@ class DuplicateDetectionService {
             method: 'gemini',
             originalId: candidate.id,
             similarity: similarity,
-            action: 'rejected_obsolete'
+            action: 'rejected_obsolete',
+            matchDetails: {
+              matchType: 'gemini_ai_analysis',
+              originalMessage: candidate.message,
+              originalContext: candidate.context,
+              originalState: candidate.state,
+              originalTimestamp: candidate.timestamp
+            }
           };
         }
       }

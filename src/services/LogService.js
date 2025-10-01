@@ -81,7 +81,65 @@ class LogService {
       if (duplicateResult.action === 'rejected_obsolete') {
         // Return 200 but discard the duplicate issue as obsolete
         const originalEntry = await this.logRepo.findById(duplicateResult.originalId);
-        console.log(`Issue rejected as ${duplicateResult.method} duplicate (similarity: ${duplicateResult.similarity})`);
+
+        // Enhanced logging for duplicate rejections
+        console.log('='.repeat(80));
+        console.log(`🚫 DUPLICATE ISSUE REJECTED`);
+        console.log('='.repeat(80));
+
+        // Method-specific descriptions
+        const methodDescriptions = {
+          'exact_match': 'Exact Match (100% identical)',
+          'embedding_high': 'High Embedding Similarity (AI Vector Analysis)',
+          'gemini': 'Gemini AI Semantic Analysis'
+        };
+
+        console.log(`Detection Method: ${methodDescriptions[duplicateResult.method] || duplicateResult.method}`);
+        console.log(`Similarity Score: ${(duplicateResult.similarity * 100).toFixed(1)}%`);
+        console.log(`Original Issue ID: ${duplicateResult.originalId}`);
+
+        if (duplicateResult.matchDetails) {
+          const details = duplicateResult.matchDetails;
+          console.log(`Match Type: ${details.matchType}`);
+          console.log(`Original State: ${details.originalState}`);
+          console.log(`Original Timestamp: ${new Date(details.originalTimestamp).toLocaleString()}`);
+          console.log('-'.repeat(80));
+          console.log('📝 NEW ISSUE (rejected):');
+          console.log(`  Message: "${message}"`);
+          if (context && Object.keys(context).length > 0) {
+            console.log(`  Context:`);
+            Object.entries(context).forEach(([key, value]) => {
+              console.log(`    ${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`);
+            });
+          }
+          console.log('-'.repeat(80));
+          console.log('📋 ORIGINAL ISSUE (matched):');
+          console.log(`  Message: "${details.originalMessage}"`);
+          if (details.originalContext && Object.keys(details.originalContext).length > 0) {
+            console.log(`  Context:`);
+            Object.entries(details.originalContext).forEach(([key, value]) => {
+              console.log(`    ${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`);
+            });
+          }
+
+          // Show differences for debugging
+          if (duplicateResult.method === 'exact_match') {
+            console.log('-'.repeat(80));
+            console.log('🔍 ANALYSIS:');
+            if (details.matchType === 'message') {
+              console.log('  ✓ Messages are IDENTICAL');
+            } else if (details.matchType === 'context') {
+              console.log('  ✓ Contexts are IDENTICAL');
+            }
+            console.log('  ℹ️  This is a 100% exact duplicate - no new information');
+          }
+        } else {
+          // Fallback for cases without detailed match info
+          console.log('-'.repeat(80));
+          console.log('📝 NEW ISSUE (rejected):');
+          console.log(`  Message: "${message}"`);
+        }
+        console.log('='.repeat(80));
 
         return {
           success: true,
@@ -91,7 +149,8 @@ class LogService {
           duplicateInfo: {
             method: duplicateResult.method,
             similarity: duplicateResult.similarity,
-            originalId: duplicateResult.originalId
+            originalId: duplicateResult.originalId,
+            matchDetails: duplicateResult.matchDetails
           }
         };
       }
