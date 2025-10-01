@@ -67,7 +67,9 @@ class Config {
 
       // Embedding-based similarity detection
       embeddingEnabled: process.env.DUPLICATE_EMBEDDING_ENABLED !== 'false',
-      embeddingHighThreshold: parseFloat(process.env.DUPLICATE_EMBEDDING_HIGH_THRESHOLD) || 0.95,
+      // Increased from 0.95 to 0.97 to reduce false positives
+      // The embedding now weights the actual message more heavily (repeated 3x)
+      embeddingHighThreshold: parseFloat(process.env.DUPLICATE_EMBEDDING_HIGH_THRESHOLD) || 0.97,
       embeddingMediumThreshold: parseFloat(process.env.DUPLICATE_EMBEDDING_MEDIUM_THRESHOLD) || 0.85,
 
       // Gemini fallback for edge cases

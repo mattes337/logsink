@@ -255,23 +255,55 @@ class DuplicateDetectionService {
   /**
    * Format text for embedding generation
    * Uses combined message (message + context.message) to ensure both are always considered
+   * Prioritizes the actual user message over metadata to avoid false positives
    */
   formatTextForEmbedding(log) {
     // Use combined message for better duplicate detection
     const combinedMessage = this.getCombinedMessage(log.message, log.context);
 
+    // Start with the combined message repeated multiple times to give it more weight
     const parts = [
-      `Message: ${combinedMessage}`,
+      `Issue: ${combinedMessage}`,
+      `Description: ${combinedMessage}`,
+      `Summary: ${combinedMessage}`,
       `Application: ${log.application_id}`
     ];
 
-    // Include other context fields (excluding the message field since it's already in combinedMessage)
+    // Only include specific context fields that are relevant for duplicate detection
+    // Exclude metadata that's likely to be the same across different issues
     if (log.context && Object.keys(log.context).length > 0) {
-      const contextWithoutMessage = { ...log.context };
-      delete contextWithoutMessage.message; // Remove message to avoid duplication
+      const relevantContext = {};
 
-      if (Object.keys(contextWithoutMessage).length > 0) {
-        const contextStr = JSON.stringify(contextWithoutMessage, null, 2);
+      // Include only fields that help distinguish different issues
+      const relevantFields = [
+        'reportType',
+        'severity',
+        'error',
+        'error_code',
+        'service',
+        'stack_trace',
+        'level',
+        'source',
+        'type'
+      ];
+
+      for (const field of relevantFields) {
+        if (log.context[field]) {
+          relevantContext[field] = log.context[field];
+        }
+      }
+
+      // Include element tag and class if present (but not full innerHTML which can be huge)
+      if (log.context.elementInfo) {
+        relevantContext.element = {
+          tagName: log.context.elementInfo.tagName,
+          id: log.context.elementInfo.id,
+          className: log.context.elementInfo.className
+        };
+      }
+
+      if (Object.keys(relevantContext).length > 0) {
+        const contextStr = JSON.stringify(relevantContext, null, 2);
         parts.push(`Context: ${contextStr}`);
       }
     }
