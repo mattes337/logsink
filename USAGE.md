@@ -55,6 +55,29 @@ curl -X POST http://localhost:3000/log \
   }'
 ```
 
+**Enhanced Duplicate Detection**: The system now automatically detects and rejects duplicate issues using:
+
+⚠️ **CRITICAL BUSINESS RULE**: Never merges new issues with closed issues. Duplicate detection only matches against open issues (excluding 'closed' and 'revert' states) to ensure bugs and requirements can re-appear without being incorrectly merged with historical closed issues.
+
+- **Exact Match Detection**: Identical titles/content are immediately rejected as obsolete (open issues only)
+- **Embedding Similarity**: High similarity (≥0.95) issues are rejected automatically (open issues only)
+- **AI-Powered Analysis**: Medium similarity issues (0.85-0.94) use Gemini for sophisticated duplicate detection (open issues only)
+
+Response for duplicate issues:
+```json
+{
+  "success": true,
+  "logged": { /* original issue data */ },
+  "deduplicated": true,
+  "action": "rejected_obsolete",
+  "duplicateInfo": {
+    "method": "exact_match|embedding_high|gemini",
+    "similarity": 1.0,
+    "originalId": "uuid-of-original-issue"
+  }
+}
+```
+
 ### Get all logs for an application
 ```bash
 curl -H "X-API-Key: YOUR_API_KEY" http://localhost:3000/log/my-app
@@ -324,6 +347,41 @@ curl -X POST http://localhost:3000/embedding/process/LOG_ID \
 ### Get pending embeddings count
 ```bash
 curl -H "X-API-Key: YOUR_API_KEY" http://localhost:3000/embedding/pending
+```
+
+### Get duplicate detection statistics
+```bash
+curl -H "X-API-Key: YOUR_API_KEY" http://localhost:3000/log/duplicate-stats
+```
+
+Response:
+```json
+{
+  "success": true,
+  "stats": [
+    {
+      "detection_method": "exact_match",
+      "count": 15,
+      "avg_similarity": 1.0,
+      "max_similarity": 1.0,
+      "min_similarity": 1.0
+    },
+    {
+      "detection_method": "embedding_high",
+      "count": 8,
+      "avg_similarity": 0.97,
+      "max_similarity": 0.99,
+      "min_similarity": 0.95
+    },
+    {
+      "detection_method": "gemini",
+      "count": 3,
+      "avg_similarity": 0.92,
+      "max_similarity": 0.94,
+      "min_similarity": 0.90
+    }
+  ]
+}
 ```
 
 ## API Documentation

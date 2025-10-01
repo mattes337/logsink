@@ -164,6 +164,19 @@ curl -X POST http://localhost:1234/log/my-app/{entryId}/analyze \
 #### AI Features
 - `GEMINI_API_KEY` - Google Gemini API key
 - `GEMINI_ENABLED` - Enable AI features (default: true if API key provided)
+- `GEMINI_EMBEDDING_ENABLED` - Enable embedding-based similarity detection (default: false)
+- `GEMINI_EMBEDDING_MODEL` - Embedding model (default: "text-embedding-004")
+- `GEMINI_SIMILARITY_THRESHOLD` - Embedding similarity threshold (default: 0.85)
+
+#### Enhanced Duplicate Detection
+- `DUPLICATE_EXACT_MATCH_ENABLED` - Enable exact match detection (default: true)
+- `DUPLICATE_EMBEDDING_ENABLED` - Enable embedding-based detection (default: true)
+- `DUPLICATE_EMBEDDING_HIGH_THRESHOLD` - High similarity threshold for auto-rejection (default: 0.95)
+- `DUPLICATE_EMBEDDING_MEDIUM_THRESHOLD` - Medium similarity threshold for Gemini analysis (default: 0.85)
+- `DUPLICATE_GEMINI_ENABLED` - Enable Gemini fallback for edge cases (default: true)
+- `DUPLICATE_GEMINI_THRESHOLD` - Gemini similarity threshold (default: 0.90)
+- `DUPLICATE_MAX_CANDIDATES_EMBEDDING` - Max candidates for embedding comparison (default: 50)
+- `DUPLICATE_MAX_CANDIDATES_GEMINI` - Max candidates for Gemini analysis (default: 5)
 
 #### Blacklist
 - `BLACKLIST_ENABLED` - Enable blacklist filtering (default: true)

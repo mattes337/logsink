@@ -54,6 +54,25 @@ class Config {
       apiKey: process.env.GEMINI_API_KEY || ''
     };
 
+    // Enhanced Duplicate Detection configuration
+    this.duplicateDetection = {
+      // Exact match detection (title/content)
+      exactMatchEnabled: process.env.DUPLICATE_EXACT_MATCH_ENABLED !== 'false',
+
+      // Embedding-based similarity detection
+      embeddingEnabled: process.env.DUPLICATE_EMBEDDING_ENABLED !== 'false',
+      embeddingHighThreshold: parseFloat(process.env.DUPLICATE_EMBEDDING_HIGH_THRESHOLD) || 0.95,
+      embeddingMediumThreshold: parseFloat(process.env.DUPLICATE_EMBEDDING_MEDIUM_THRESHOLD) || 0.85,
+
+      // Gemini fallback for edge cases
+      geminiEnabled: process.env.DUPLICATE_GEMINI_ENABLED !== 'false',
+      geminiThreshold: parseFloat(process.env.DUPLICATE_GEMINI_THRESHOLD) || 0.90,
+
+      // Performance settings
+      maxCandidatesForEmbedding: parseInt(process.env.DUPLICATE_MAX_CANDIDATES_EMBEDDING) || 50,
+      maxCandidatesForGemini: parseInt(process.env.DUPLICATE_MAX_CANDIDATES_GEMINI) || 5
+    };
+
     // Cleanup service configuration
     this.cleanup = {
       enabled: process.env.CLEANUP_ENABLED !== 'false',

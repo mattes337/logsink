@@ -9,6 +9,9 @@
 - `<application-id>`: Your application identifier in the sink system
 - `<api-key>`: Your API key for authentication
 
+## Quick Reference: Component Path Feature
+When processing issues, check for `context.elementInfo.componentPath` to get the exact file path of the problematic component. This eliminates guesswork and speeds up resolution significantly.
+
 ## Command Definition
 
 ```markdown
@@ -21,13 +24,13 @@ Follow these steps:
 1. **Fetch Open Issues**
    Execute this curl command to retrieve all open bugs/issues (pending state is only for embedding processing):
    ```bash
-   curl -H "X-API-Key: {API_KEY}" https://logsink.drydev.de/log/{APP_ID}/open
+   curl.exe -H "X-API-Key: {API_KEY}" https://logsink.drydev.de/log/{APP_ID}/open
    ```
 
 2. **Detect duplicates and group issues**
    Detect which issues are duplicates and delete all duplicates. If you are unsure, group issues and pass the group to the next step.
    ```bash
-   curl -X DELETE -H "X-API-Key: {API_KEY}" https://logsink.drydev.de/log/{APP_ID}/{ENTRY_ID}
+   curl.exe -X DELETE -H "X-API-Key: {API_KEY}" https://logsink.drydev.de/log/{APP_ID}/{ENTRY_ID}
    ```
 
 3. **Process Each Issue/Group Sequentially**
@@ -36,13 +39,13 @@ Follow these steps:
    a. **Check for Associated Images**
       If the JSON entry references any images, load them for context:
       ```bash
-      curl -H "X-API-Key: {API_KEY}" https://logsink.drydev.de/log/{APP_ID}/img/{FILENAME}
+      curl.exe -H "X-API-Key: {API_KEY}" https://logsink.drydev.de/log/{APP_ID}/img/{FILENAME}
       ```
 
    b. **Check and Create Implementation Plan if Needed**
       If the issue is in open state and has no plan (plan field is null or empty):
       ```bash
-      curl -X PATCH \
+      curl.exe -X PATCH \
         -H "X-API-Key: {API_KEY}" \
         -H "Content-Type: application/json" \
         -d '{"plan":"# Implementation Plan\n\n1. [Step 1]\n2. [Step 2]\n3. [Step 3]"}' \
@@ -52,13 +55,15 @@ Follow these steps:
    c. **Mark as In-Progress**
       Set the issue to in-progress state before implementing:
       ```bash
-      curl -X PATCH \
+      curl.exe -X PATCH \
         -H "X-API-Key: {API_KEY}" \
         https://logsink.drydev.de/log/{APP_ID}/{ENTRY_ID}/in-progress
       ```
 
    d. **Create a Sub-Agent to Fix the Issue**
-      - Analyze the error/issue details
+      - Check if the issue contains a component path (context.elementInfo.componentPath)
+      - If component path exists, use it to directly identify and analyze the specific component file
+      - Otherwise, analyze the error/issue details to locate the relevant code
       - Develop an appropriate fix
       - Implement the solution
       - Test the fix if applicable
@@ -67,7 +72,7 @@ Follow these steps:
    e. **Mark as Complete**
       Once fixed, update the log entry to done state:
       ```bash
-      curl -X PUT \
+      curl.exe -X PUT \
         -H "X-API-Key: {API_KEY}" \
         -H "Content-Type: application/json" \
         -d '{"message":"[1-3 sentence summary of what was implemented]","git_commit":"[commit hash if applicable]"}' \
@@ -98,9 +103,29 @@ Follow these steps:
 - Load and analyze any referenced images before attempting fixes
 - Each fix should be thorough and include appropriate error handling
 - Include git commit hash in the completion message when available
-```
 
-## Example Usage
-
+## Component Path Recognition
+When processing issues from report mode, check for component path information:
+- **Location**: `context.elementInfo.componentPath` in the issue JSON
+- **Format**: Relative path from project root (e.g., `src/components/forms/SubmitButton.tsx`)
+- **Usage**: If present, use this path to directly identify which component file to analyze
+- **Benefits**: Eliminates guesswork and speeds up issue resolution
+- **Example**:
+  ```json
+  {
+    "context": {
+      "elementInfo": {
+        "componentPath": "src/components/forms/SubmitButton.tsx",
+        "tagName": "BUTTON",
+        "id": "submit-btn"
+      }
+    }
+  }
+  ```
+- **Workflow**: When componentPath is present:
+  1. Read the component file at the specified path
+  2. Analyze the component code in context of the reported issue
+  3. Identify the specific problem area within that component
+  4. Implement the fix in the correct file
+  5. Test the component to ensure the fix works
 ```
-User: /fix-from-sink peak.iot.dashboard.augment2 my-super-secret-key

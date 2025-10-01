@@ -92,10 +92,10 @@ class EmbeddingService {
           context,
           screenshots,
           1 - (embedding <=> $1::vector) as similarity_score
-        FROM logs 
-        WHERE application_id = $2 
-          AND embedding IS NOT NULL 
-          AND state != 'pending'
+        FROM logs
+        WHERE application_id = $2
+          AND embedding IS NOT NULL
+          AND state NOT IN ('pending', 'closed', 'revert')
           AND 1 - (embedding <=> $1::vector) >= $3
         ORDER BY embedding <=> $1::vector
         LIMIT $4

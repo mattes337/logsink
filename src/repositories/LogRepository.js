@@ -105,7 +105,7 @@ class LogRepository {
       const combinedMessage = message + (context?.message || '');
       const query = `
         SELECT * FROM logs
-        WHERE application_id = $1 AND message = $2 AND state IN ('done', 'closed')
+        WHERE application_id = $1 AND message = $2 AND state NOT IN ('closed', 'revert')
         ORDER BY timestamp DESC LIMIT 1
       `;
       const result = await this.pool.query(query, [applicationId, combinedMessage]);
@@ -282,7 +282,7 @@ class LogRepository {
     try {
       const query = `
         SELECT id, message, context FROM logs
-        WHERE application_id = $1 AND state NOT IN ('closed')
+        WHERE application_id = $1 AND state NOT IN ('closed', 'revert')
         AND created_at > NOW() - INTERVAL '7 days'
       `;
       const result = await this.pool.query(query, [applicationId]);

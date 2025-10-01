@@ -10,6 +10,7 @@ import databaseManager from '../src/config/database.js';
 import LogService from '../src/services/LogService.js';
 import BlacklistService from '../src/services/BlacklistService.js';
 import EmbeddingService from '../src/services/EmbeddingService.js';
+import DuplicateDetectionService from '../src/services/DuplicateDetectionService.js';
 import BackgroundProcessor from '../src/services/BackgroundProcessor.js';
 import createLogRoutes from '../src/routes/logRoutes.js';
 import createBlacklistRoutes from '../src/routes/blacklistRoutes.js';
@@ -24,6 +25,7 @@ describe('LogSink Core Functionality Tests', function() {
   let logService;
   let blacklistService;
   let embeddingService;
+  let duplicateDetectionService;
   let backgroundProcessor;
   const testApiKey = 'test-api-key-123';
 
@@ -173,12 +175,14 @@ describe('LogSink Core Functionality Tests', function() {
     // Initialize services
     blacklistService = new BlacklistService();
     embeddingService = new EmbeddingService();
+    duplicateDetectionService = new DuplicateDetectionService();
     backgroundProcessor = new BackgroundProcessor();
-    logService = new LogService(blacklistService, null, embeddingService);
+    logService = new LogService(blacklistService, null, embeddingService, duplicateDetectionService);
 
     // Initialize services (skip actual initialization)
     sinon.stub(blacklistService, 'initialize').returns();
     sinon.stub(embeddingService, 'initialize').returns();
+    sinon.stub(duplicateDetectionService, 'initialize').returns();
     sinon.stub(backgroundProcessor, 'initialize').returns();
     sinon.stub(logService, 'initialize').returns();
 
@@ -207,7 +211,28 @@ describe('LogSink Core Functionality Tests', function() {
     sinon.stub(blacklistService, 'ensureCacheValid').resolves();
     sinon.stub(blacklistService, 'isBlacklisted').resolves(false);
 
+    // Mock duplicate detection service methods
+    sinon.stub(duplicateDetectionService, 'detectDuplicate').resolves({
+      isDuplicate: false,
+      method: 'none',
+      originalId: null,
+      similarity: 0,
+      action: 'create_new'
+    });
+    sinon.stub(duplicateDetectionService, 'getStats').resolves([]);
+
     // Don't mock LogService.updateLogState - let it use the mocked repository methods
+
+    // Mock LogService.getDuplicateDetectionStats
+    sinon.stub(logService, 'getDuplicateDetectionStats').resolves([
+      {
+        detection_method: 'exact_match',
+        count: 5,
+        avg_similarity: 1.0,
+        max_similarity: 1.0,
+        min_similarity: 1.0
+      }
+    ]);
 
     // Create Express app
     app = express();
@@ -452,6 +477,59 @@ describe('LogSink Core Functionality Tests', function() {
       expect(response.body).to.have.property('enabled');
       expect(response.body).to.have.property('model');
       expect(response.body).to.have.property('pendingLogs');
+    });
+
+    it('should reject exact duplicate issues as obsolete', async function() {
+      const issueData = {
+        applicationId: 'test-app-duplicate',
+        message: 'Exact duplicate message for testing',
+        context: { error: 'Same error context', severity: 'high' }
+      };
+
+      // Create first issue
+      const firstResponse = await request(app)
+        .post('/log')
+        .set('X-API-Key', testApiKey)
+        .send(issueData)
+        .expect(200);
+
+      expect(firstResponse.body.success).to.be.true;
+      expect(firstResponse.body.action).to.equal('created_new');
+      const firstIssueId = firstResponse.body.logged.id;
+
+      // Mock duplicate detection to return duplicate for second call
+      duplicateDetectionService.detectDuplicate.onSecondCall().resolves({
+        isDuplicate: true,
+        method: 'exact_match',
+        originalId: firstIssueId,
+        similarity: 1.0,
+        action: 'rejected_obsolete'
+      });
+
+      // Try to create exact duplicate
+      const duplicateResponse = await request(app)
+        .post('/log')
+        .set('X-API-Key', testApiKey)
+        .send(issueData)
+        .expect(200);
+
+      expect(duplicateResponse.body.success).to.be.true;
+      expect(duplicateResponse.body.action).to.equal('rejected_obsolete');
+      expect(duplicateResponse.body.duplicateInfo).to.exist;
+      expect(duplicateResponse.body.duplicateInfo.method).to.equal('exact_match');
+      expect(duplicateResponse.body.duplicateInfo.originalId).to.equal(firstIssueId);
+      expect(duplicateResponse.body.duplicateInfo.similarity).to.equal(1.0);
+    });
+
+    it('should get duplicate detection statistics', async function() {
+      const response = await request(app)
+        .get('/log/duplicate-stats')
+        .set('X-API-Key', testApiKey)
+        .expect(200);
+
+      expect(response.body).to.have.property('success', true);
+      expect(response.body).to.have.property('stats');
+      expect(response.body.stats).to.be.an('array');
     });
   });
 });

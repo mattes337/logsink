@@ -94,9 +94,11 @@ class DatabaseManager {
           original_log_id VARCHAR(255) NOT NULL,
           duplicate_log_id VARCHAR(255) NOT NULL,
           similarity_score DECIMAL(5,4) NOT NULL,
+          detection_method VARCHAR(50) NOT NULL DEFAULT 'unknown',
           detected_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
           FOREIGN KEY (original_log_id) REFERENCES logs(id) ON DELETE CASCADE,
-          FOREIGN KEY (duplicate_log_id) REFERENCES logs(id) ON DELETE CASCADE
+          FOREIGN KEY (duplicate_log_id) REFERENCES logs(id) ON DELETE CASCADE,
+          UNIQUE(original_log_id, duplicate_log_id)
         )
       `);
 
@@ -109,8 +111,11 @@ class DatabaseManager {
         CREATE INDEX IF NOT EXISTS idx_logs_embedding ON logs USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
         CREATE INDEX IF NOT EXISTS idx_logs_type ON logs(type);
         CREATE INDEX IF NOT EXISTS idx_logs_effort ON logs(effort);
+        CREATE INDEX IF NOT EXISTS idx_logs_message_hash ON logs(md5(message));
+        CREATE INDEX IF NOT EXISTS idx_logs_app_message ON logs(application_id, message);
         CREATE INDEX IF NOT EXISTS idx_blacklist_application_id ON blacklist(application_id);
         CREATE INDEX IF NOT EXISTS idx_duplicates_original ON duplicates(original_log_id);
+        CREATE INDEX IF NOT EXISTS idx_duplicates_method ON duplicates(detection_method);
       `);
 
       // Create function for updating updated_at timestamp

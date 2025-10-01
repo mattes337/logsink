@@ -3,28 +3,31 @@ import LogRepository from '../repositories/LogRepository.js';
 import BlacklistService from './BlacklistService.js';
 import GeminiService from './GeminiService.js';
 import EmbeddingService from './EmbeddingService.js';
+import DuplicateDetectionService from './DuplicateDetectionService.js';
 import config from '../config/index.js';
 import fs from 'fs';
 import path from 'path';
 
 class LogService {
-  constructor(blacklistService = null, geminiService = null, embeddingService = null) {
+  constructor(blacklistService = null, geminiService = null, embeddingService = null, duplicateDetectionService = null) {
     this.logRepo = new LogRepository();
     this.blacklistService = blacklistService || new BlacklistService();
     this.geminiService = geminiService || new GeminiService();
     this.embeddingService = embeddingService || new EmbeddingService();
+    this.duplicateDetectionService = duplicateDetectionService || new DuplicateDetectionService();
   }
 
   initialize() {
     this.logRepo.initialize();
-    if (!this.blacklistService.initialized) {
-      this.blacklistService.initialize();
-    }
-    if (!this.geminiService.initialized) {
+    this.blacklistService.initialize();
+    if (!this.geminiService.isInitialized) {
       this.geminiService.initialize();
     }
     if (!this.embeddingService.isInitialized) {
       this.embeddingService.initialize();
+    }
+    if (!this.duplicateDetectionService.isInitialized) {
+      this.duplicateDetectionService.initialize();
     }
 
     // Ensure images directory exists
@@ -62,15 +65,43 @@ class LogService {
     // Process screenshots in context
     processedContext = this.processScreenshots(processedContext, screenshots, applicationId, entryId);
 
-    // Check for existing duplicate
+    // Enhanced duplicate detection
+    const duplicateResult = await this.duplicateDetectionService.detectDuplicate({
+      applicationId,
+      message,
+      context: processedContext
+    });
+
+    let resultEntry;
+    let deduplicated = false;
+    let action = 'created_new';
+
+    if (duplicateResult.isDuplicate) {
+      if (duplicateResult.action === 'rejected_obsolete') {
+        // Return 200 but discard the duplicate issue as obsolete
+        const originalEntry = await this.logRepo.findById(duplicateResult.originalId);
+        console.log(`Issue rejected as ${duplicateResult.method} duplicate (similarity: ${duplicateResult.similarity})`);
+
+        return {
+          success: true,
+          logged: originalEntry,
+          deduplicated: true,
+          action: 'rejected_obsolete',
+          duplicateInfo: {
+            method: duplicateResult.method,
+            similarity: duplicateResult.similarity,
+            originalId: duplicateResult.originalId
+          }
+        };
+      }
+    }
+
+    // Check for legacy duplicate detection (for reopening closed issues)
     const existingEntry = await this.logRepo.findDuplicateCandidate(
       applicationId,
       message,
       processedContext
     );
-
-    let resultEntry;
-    let deduplicated = false;
 
     if (existingEntry && existingEntry.state === 'done') {
       // Reopen existing entry
@@ -87,6 +118,7 @@ class LogService {
 
       resultEntry = await this.logRepo.findById(existingEntry.id);
       deduplicated = true;
+      action = 'reopened_existing';
     } else {
       // Create new entry
       // Always start with 'pending' state
@@ -114,7 +146,7 @@ class LogService {
       success: true,
       logged: resultEntry,
       deduplicated,
-      action: deduplicated ? 'reopened_existing' : 'created_new'
+      action
     };
   }
 
@@ -469,6 +501,14 @@ class LogService {
       return await this.embeddingService.findSimilarLogs(embedding, applicationId, limit, 0.5);
     } catch (error) {
       throw new Error(`Failed to search by text: ${error.message}`);
+    }
+  }
+
+  async getDuplicateDetectionStats() {
+    try {
+      return await this.duplicateDetectionService.getStats();
+    } catch (error) {
+      throw new Error(`Failed to get duplicate detection stats: ${error.message}`);
     }
   }
 

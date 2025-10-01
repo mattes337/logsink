@@ -73,6 +73,15 @@
 - [x] Configuration reference
 - [x] Docker deployment guide
 
+### 11. Report Mode Component Path Tracking (2025-09-30)
+- [x] Added `data-component-path` attribute support in report mode
+- [x] Component path captured in `elementInfo.componentPath` field
+- [x] Updated REPORT_MODE.md with component path tracking guide
+- [x] Added development mode best practices for component identification
+- [x] Updated fix-from-sink command to recognize component paths
+- [x] Created Babel plugin example for automatic path injection
+- [x] Added troubleshooting guide for component path tracking
+
 ### 10. Testing & Quality
 - [x] Removed legacy file-based code
 - [x] Implemented proper error handling
@@ -95,6 +104,7 @@
 - **Automated Cleanup**: Background duplicate detection and removal
 - **Better Deduplication**: AI-powered similarity detection
 - **Enhanced Workflow**: Improved state management and transitions
+- **Component Path Tracking**: Precise component identification in dev mode for faster issue resolution
 
 ### Reliability
 - **ACID Transactions**: PostgreSQL's robust transaction support

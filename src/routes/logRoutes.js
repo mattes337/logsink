@@ -72,6 +72,20 @@ router.post('/log/:applicationId', authenticateApiKey, async (req, res) => {
   }
 });
 
+// GET /log/duplicate-stats - Get duplicate detection statistics (requires API key)
+router.get('/log/duplicate-stats', authenticateApiKey, async (req, res) => {
+  try {
+    const stats = await logService.getDuplicateDetectionStats();
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    console.error('Error getting duplicate detection stats:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /log/:applicationId - Retrieve all logs for an application (requires API key)
 router.get('/log/:applicationId', authenticateApiKey, async (req, res) => {
   try {

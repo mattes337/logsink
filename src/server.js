@@ -393,7 +393,7 @@ const server = app.listen(config.server.port, () => {
   console.log(`🧹 Cleanup: ${config.cleanup.enabled ? `Enabled (${config.cleanup.interval})` : 'Disabled'}`);
   console.log(`
 📋 Available endpoints:
-  POST   /log                                    - Create log entries
+  POST   /log                                    - Create log entries (with enhanced duplicate detection)
   POST   /log/:applicationId                     - Create log entries with applicationId in URL
   GET    /log/:applicationId                     - Get all logs
   GET    /log/:applicationId/pending             - Get pending logs
@@ -401,6 +401,7 @@ const server = app.listen(config.server.port, () => {
   GET    /log/:applicationId/done                - Get done logs
   GET    /log/:applicationId/in-progress         - Get in-progress logs
   GET    /log/:applicationId/statistics          - Get log statistics
+  GET    /log/duplicate-stats                    - Get duplicate detection statistics
   POST   /log/:applicationId/:entryId/analyze    - AI analysis (if enabled)
   POST   /log/:applicationId/:entryId/suggest    - AI suggestions (if enabled)
   POST   /log/:applicationId/summary             - AI summary (if enabled)
