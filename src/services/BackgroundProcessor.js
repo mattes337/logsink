@@ -103,7 +103,9 @@ class BackgroundProcessor {
 
   async processLogEmbedding(log) {
     try {
-      console.log(`[BackgroundProcessor] Processing log ${log.id}: "${log.message}"`);
+      console.log(`[BackgroundProcessor] Processing NEW log ${log.id}:`);
+      console.log(`[BackgroundProcessor]   Message: "${log.message}"`);
+      console.log(`[BackgroundProcessor]   App: ${log.application_id}`);
 
       // Generate embedding for the log
       const text = this.embeddingService.formatTextForEmbedding(log);
@@ -121,6 +123,7 @@ class BackgroundProcessor {
 
       console.log(`[BackgroundProcessor] Found ${similarLogs.length} similar logs for ${log.id} (threshold: ${config.embedding.similarityThreshold})`);
       if (similarLogs.length > 0) {
+        console.log(`[BackgroundProcessor] Comparing NEW: "${log.message}"`);
         console.log(`[BackgroundProcessor] Similar logs:`, similarLogs.map(l => ({
           id: l.id,
           message: l.message.substring(0, 50),
@@ -129,32 +132,39 @@ class BackgroundProcessor {
         })));
       }
 
-      // Check if we should merge with an existing log
-      const mergeCandidate = this.findBestMergeCandidate(similarLogs);
+      // Check if auto-merging is enabled
+      if (config.embedding.autoMergeEnabled) {
+        console.log(`[BackgroundProcessor] Auto-merge is ENABLED (threshold: ${config.embedding.autoMergeThreshold})`);
 
-      if (mergeCandidate) {
-        console.log(`[BackgroundProcessor] Merge candidate found for ${log.id}:`, {
-          candidateId: mergeCandidate.id,
-          candidateMessage: mergeCandidate.message.substring(0, 50),
-          candidateState: mergeCandidate.state,
-          similarity: mergeCandidate.similarity_score,
-          threshold: config.embedding.similarityThreshold
-        });
+        // Check if we should merge with an existing log
+        const mergeCandidate = this.findBestMergeCandidate(similarLogs);
 
-        // Merge the pending log into the existing one
-        const merged = await this.embeddingService.mergeLogs(
-          log.id,
-          mergeCandidate.id,
-          `Similarity score: ${mergeCandidate.similarity_score.toFixed(3)}`
-        );
+        if (mergeCandidate) {
+          console.log(`[BackgroundProcessor] Merge candidate found for ${log.id}:`, {
+            candidateId: mergeCandidate.id,
+            candidateMessage: mergeCandidate.message.substring(0, 50),
+            candidateState: mergeCandidate.state,
+            similarity: mergeCandidate.similarity_score,
+            threshold: config.embedding.autoMergeThreshold
+          });
 
-        if (merged) {
-          this.stats.logs_merged++;
-          console.log(`Merged log ${log.id} into ${mergeCandidate.id} (similarity: ${mergeCandidate.similarity_score.toFixed(3)})`);
-          return;
+          // Merge the pending log into the existing one
+          const merged = await this.embeddingService.mergeLogs(
+            log.id,
+            mergeCandidate.id,
+            `Similarity score: ${mergeCandidate.similarity_score.toFixed(3)}`
+          );
+
+          if (merged) {
+            this.stats.logs_merged++;
+            console.log(`Merged log ${log.id} into ${mergeCandidate.id} (similarity: ${mergeCandidate.similarity_score.toFixed(3)})`);
+            return;
+          }
+        } else {
+          console.log(`[BackgroundProcessor] No merge candidate found for ${log.id}`);
         }
       } else {
-        console.log(`[BackgroundProcessor] No merge candidate found for ${log.id}`);
+        console.log(`[BackgroundProcessor] Auto-merge is DISABLED - skipping merge check`);
       }
 
       // No merge candidate found, save embedding and move to open state
@@ -176,8 +186,9 @@ class BackgroundProcessor {
       return null;
     }
 
+    const mergeThreshold = config.embedding.autoMergeThreshold;
     console.log(`[BackgroundProcessor] Checking ${similarLogs.length} similar logs for merge candidates`);
-    console.log(`[BackgroundProcessor] Merge threshold: ${config.embedding.similarityThreshold}`);
+    console.log(`[BackgroundProcessor] Auto-merge threshold: ${mergeThreshold}`);
 
     // Find the most similar log that's in a state we can merge with
     const mergeableStates = ['pending', 'open', 'in_progress', 'done'];
@@ -186,19 +197,19 @@ class BackgroundProcessor {
       console.log(`[BackgroundProcessor] Evaluating log ${log.id}:`, {
         state: log.state,
         similarity: log.similarity_score,
-        threshold: config.embedding.similarityThreshold,
+        threshold: mergeThreshold,
         isMergeableState: mergeableStates.includes(log.state),
-        meetsThreshold: log.similarity_score >= config.embedding.similarityThreshold
+        meetsThreshold: log.similarity_score >= mergeThreshold
       });
 
       if (mergeableStates.includes(log.state) &&
-          log.similarity_score >= config.embedding.similarityThreshold) {
+          log.similarity_score >= mergeThreshold) {
         console.log(`[BackgroundProcessor] Selected log ${log.id} as merge candidate`);
         return log;
       }
     }
 
-    console.log(`[BackgroundProcessor] No suitable merge candidate found`);
+    console.log(`[BackgroundProcessor] No suitable merge candidate found (none above ${mergeThreshold} threshold)`);
     return null;
   }
 

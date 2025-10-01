@@ -51,7 +51,13 @@ class Config {
       enabled: process.env.GEMINI_EMBEDDING_ENABLED === 'true',
       model: process.env.GEMINI_EMBEDDING_MODEL || 'text-embedding-004',
       similarityThreshold: parseFloat(process.env.GEMINI_SIMILARITY_THRESHOLD) || 0.85,
-      apiKey: process.env.GEMINI_API_KEY || ''
+      apiKey: process.env.GEMINI_API_KEY || '',
+
+      // Background merging configuration
+      // WARNING: Auto-merging can cause false positives. Use with caution.
+      // It's recommended to rely on duplicate detection during log creation instead.
+      autoMergeEnabled: process.env.EMBEDDING_AUTO_MERGE_ENABLED === 'true',
+      autoMergeThreshold: parseFloat(process.env.EMBEDDING_AUTO_MERGE_THRESHOLD) || 0.98
     };
 
     // Enhanced Duplicate Detection configuration
