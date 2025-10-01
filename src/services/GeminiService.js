@@ -295,23 +295,40 @@ Reason: [brief explanation]
   }
 
   buildDuplicateDetectionPrompt(logEntry, candidateLogs) {
-    const candidates = candidateLogs.map((log, index) => 
-      `${index + 1}. ${log.message}`
-    ).join('\n');
+    // Helper function to get combined message (message + context.message)
+    const getCombinedMessage = (msg, ctx) => {
+      const parts = [msg];
+      if (ctx && ctx.message) {
+        parts.push(ctx.message);
+      }
+      return parts.join(' | ');
+    };
+
+    // Get combined message for target log
+    const targetMessage = getCombinedMessage(logEntry.message, logEntry.context);
+
+    // Get combined messages for candidates
+    const candidates = candidateLogs.map((log, index) => {
+      const candidateMessage = getCombinedMessage(log.message, log.context);
+      return `${index + 1}. ${candidateMessage}`;
+    }).join('\n');
 
     return `
-Compare the following log entry with potential duplicates and rate similarity:
+Compare the following log entry with potential duplicates and rate similarity.
+IMPORTANT: These messages may contain two parts separated by " | " - the first part is a generic category, the second part is the specific issue description. Focus on the SPECIFIC ISSUE DESCRIPTION when determining similarity.
 
-Target log: ${logEntry.message}
+Target log: ${targetMessage}
 
 Potential duplicates:
 ${candidates}
 
 For each candidate, provide a similarity score (0.0-1.0) where:
-- 1.0 = Identical or essentially the same issue
+- 1.0 = Identical or essentially the same issue (both parts match)
 - 0.8-0.9 = Very similar, likely the same root cause
 - 0.6-0.7 = Similar, possibly related
-- 0.0-0.5 = Different issues
+- 0.0-0.5 = Different issues (even if they share the same category)
+
+IMPORTANT: If the specific issue descriptions (after the " | ") are different, the score should be LOW (< 0.7), even if they're in the same category.
 
 Respond in this format:
 1: [score] - [brief reason]
