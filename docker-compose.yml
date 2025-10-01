@@ -33,6 +33,7 @@ services:
       - PORT=1234
       - API_KEY=${API_KEY:-super-secret-log-api-key-2024}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-flash-2.5-lite}
       - GEMINI_ENABLED=${GEMINI_ENABLED:-false}
       - GEMINI_EMBEDDING_ENABLED=${GEMINI_EMBEDDING_ENABLED:-false}
       - EMBEDDING_AUTO_MERGE_ENABLED=${EMBEDDING_AUTO_MERGE_ENABLED:-false}
