@@ -44,11 +44,22 @@ class EmbeddingService {
       throw new Error('Embedding service is not available');
     }
 
+    const startTime = Date.now();
     try {
+      const textLength = text.length;
+
+      console.log(`[EMBEDDING API CALL] Operation: generateEmbedding | Text length: ${textLength} chars | Model: ${config.embedding.model}`);
+
       const result = await this.model.embedContent(text);
-      return result.embedding.values;
+      const embedding = result.embedding.values;
+      const duration = Date.now() - startTime;
+
+      console.log(`[EMBEDDING API RESPONSE] Operation: generateEmbedding | Duration: ${duration}ms | Embedding dimensions: ${embedding.length} | Model: ${config.embedding.model}`);
+
+      return embedding;
     } catch (error) {
-      console.error('Failed to generate embedding:', error);
+      const duration = Date.now() - startTime;
+      console.error(`[EMBEDDING API ERROR] Operation: generateEmbedding | Duration: ${duration}ms | Error: ${error.message}`);
       throw new Error(`Embedding API error: ${error.message}`);
     }
   }
@@ -79,10 +90,11 @@ class EmbeddingService {
       return [];
     }
 
+    const startTime = Date.now();
     try {
       const similarityThreshold = threshold || config.embedding.similarityThreshold;
 
-      console.log(`[EmbeddingService] Finding similar logs for app ${applicationId} with threshold ${similarityThreshold}`);
+      console.log(`[EMBEDDING SEARCH] Operation: findSimilarLogs | App: ${applicationId} | Threshold: ${similarityThreshold} | Limit: ${limit}`);
 
       const query = `
         SELECT
@@ -110,25 +122,27 @@ class EmbeddingService {
         limit
       ]);
 
-      console.log(`[EmbeddingService] Found ${result.rows.length} similar logs above threshold ${similarityThreshold}`);
-
+      const duration = Date.now() - startTime;
       const mappedResults = result.rows.map(row => ({
         ...row,
         similarity_score: parseFloat(row.similarity_score)
       }));
 
+      console.log(`[EMBEDDING SEARCH RESULT] Operation: findSimilarLogs | Duration: ${duration}ms | Results: ${mappedResults.length} | Threshold: ${similarityThreshold}`);
+
       if (mappedResults.length > 0) {
-        console.log(`[EmbeddingService] Similar logs:`, mappedResults.map(r => ({
+        console.log(`[EMBEDDING SEARCH DETAILS] Similar logs:`, mappedResults.map(r => ({
           id: r.id,
           state: r.state,
-          similarity: r.similarity_score,
+          similarity: r.similarity_score.toFixed(4),
           message: r.message.substring(0, 50)
         })));
       }
 
       return mappedResults;
     } catch (error) {
-      console.error('Failed to find similar logs:', error);
+      const duration = Date.now() - startTime;
+      console.error(`[EMBEDDING SEARCH ERROR] Operation: findSimilarLogs | Duration: ${duration}ms | Error: ${error.message}`);
       return [];
     }
   }

@@ -45,13 +45,24 @@ class GeminiService {
       throw new Error('Gemini API is not available');
     }
 
+    const startTime = Date.now();
     try {
       const prompt = this.buildLogSummaryPrompt(logs);
+      const promptLength = prompt.length;
+
+      console.log(`[GEMINI API CALL] Operation: generateLogSummary | Logs count: ${logs.length} | Prompt length: ${promptLength} chars`);
+
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
-      return response.text();
+      const responseText = response.text();
+      const duration = Date.now() - startTime;
+
+      console.log(`[GEMINI API RESPONSE] Operation: generateLogSummary | Duration: ${duration}ms | Response length: ${responseText.length} chars | Model: ${config.gemini.model}`);
+
+      return responseText;
     } catch (error) {
-      console.error('Failed to generate log summary:', error);
+      const duration = Date.now() - startTime;
+      console.error(`[GEMINI API ERROR] Operation: generateLogSummary | Duration: ${duration}ms | Error: ${error.message}`);
       throw new Error(`Gemini API error: ${error.message}`);
     }
   }
@@ -61,13 +72,24 @@ class GeminiService {
       throw new Error('Gemini API is not available');
     }
 
+    const startTime = Date.now();
     try {
       const prompt = this.buildLogAnalysisPrompt(logEntry);
+      const promptLength = prompt.length;
+
+      console.log(`[GEMINI API CALL] Operation: analyzeLogEntry | Log ID: ${logEntry.id || 'N/A'} | Prompt length: ${promptLength} chars`);
+
       const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
+      const response = result.response;
+      const responseText = response.text();
+      const duration = Date.now() - startTime;
+
+      console.log(`[GEMINI API RESPONSE] Operation: analyzeLogEntry | Duration: ${duration}ms | Response length: ${responseText.length} chars | Model: ${config.gemini.model}`);
+
+      return responseText;
     } catch (error) {
-      console.error('Failed to analyze log entry:', error);
+      const duration = Date.now() - startTime;
+      console.error(`[GEMINI API ERROR] Operation: analyzeLogEntry | Duration: ${duration}ms | Error: ${error.message}`);
       throw new Error(`Gemini API error: ${error.message}`);
     }
   }
@@ -77,13 +99,24 @@ class GeminiService {
       throw new Error('Gemini API is not available');
     }
 
+    const startTime = Date.now();
     try {
       const prompt = this.buildSolutionPrompt(logEntry);
+      const promptLength = prompt.length;
+
+      console.log(`[GEMINI API CALL] Operation: suggestSolution | Log ID: ${logEntry.id || 'N/A'} | Prompt length: ${promptLength} chars`);
+
       const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
+      const response = result.response;
+      const responseText = response.text();
+      const duration = Date.now() - startTime;
+
+      console.log(`[GEMINI API RESPONSE] Operation: suggestSolution | Duration: ${duration}ms | Response length: ${responseText.length} chars | Model: ${config.gemini.model}`);
+
+      return responseText;
     } catch (error) {
-      console.error('Failed to suggest solution:', error);
+      const duration = Date.now() - startTime;
+      console.error(`[GEMINI API ERROR] Operation: suggestSolution | Duration: ${duration}ms | Error: ${error.message}`);
       throw new Error(`Gemini API error: ${error.message}`);
     }
   }
@@ -93,16 +126,27 @@ class GeminiService {
       throw new Error('Gemini API is not available');
     }
 
+    const startTime = Date.now();
     try {
       const prompt = this.buildCategorizationPrompt(logEntry);
+      const promptLength = prompt.length;
+
+      console.log(`[GEMINI API CALL] Operation: categorizeLog | Log ID: ${logEntry.id || 'N/A'} | Prompt length: ${promptLength} chars`);
+
       const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      
+      const response = result.response;
+
       // Parse the response to extract category and confidence
       const text = response.text();
-      return this.parseCategorizationResponse(text);
+      const duration = Date.now() - startTime;
+      const parsedResult = this.parseCategorizationResponse(text);
+
+      console.log(`[GEMINI API RESPONSE] Operation: categorizeLog | Duration: ${duration}ms | Response length: ${text.length} chars | Category: ${parsedResult.category} | Confidence: ${parsedResult.confidence} | Model: ${config.gemini.model}`);
+
+      return parsedResult;
     } catch (error) {
-      console.error('Failed to categorize log:', error);
+      const duration = Date.now() - startTime;
+      console.error(`[GEMINI API ERROR] Operation: categorizeLog | Duration: ${duration}ms | Error: ${error.message}`);
       throw new Error(`Gemini API error: ${error.message}`);
     }
   }
@@ -112,16 +156,27 @@ class GeminiService {
       throw new Error('Gemini API is not available');
     }
 
+    const startTime = Date.now();
     try {
       const prompt = this.buildDuplicateDetectionPrompt(logEntry, candidateLogs);
+      const promptLength = prompt.length;
+
+      console.log(`[GEMINI API CALL] Operation: detectDuplicates | Log ID: ${logEntry.id || 'N/A'} | Candidates: ${candidateLogs.length} | Prompt length: ${promptLength} chars`);
+
       const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      
+      const response = result.response;
+
       // Parse the response to extract similarity scores
       const text = response.text();
-      return this.parseDuplicateDetectionResponse(text);
+      const duration = Date.now() - startTime;
+      const similarities = this.parseDuplicateDetectionResponse(text);
+
+      console.log(`[GEMINI API RESPONSE] Operation: detectDuplicates | Duration: ${duration}ms | Response length: ${text.length} chars | Similarities found: ${similarities.length} | Model: ${config.gemini.model}`);
+
+      return similarities;
     } catch (error) {
-      console.error('Failed to detect duplicates:', error);
+      const duration = Date.now() - startTime;
+      console.error(`[GEMINI API ERROR] Operation: detectDuplicates | Duration: ${duration}ms | Error: ${error.message}`);
       throw new Error(`Gemini API error: ${error.message}`);
     }
   }
@@ -131,13 +186,24 @@ class GeminiService {
       throw new Error('Gemini API is not available');
     }
 
+    const startTime = Date.now();
     try {
       const prompt = this.buildCommitMessagePrompt(logEntry, changes);
+      const promptLength = prompt.length;
+
+      console.log(`[GEMINI API CALL] Operation: generateCommitMessage | Log ID: ${logEntry.id || 'N/A'} | Prompt length: ${promptLength} chars`);
+
       const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      return response.text().trim();
+      const response = result.response;
+      const responseText = response.text().trim();
+      const duration = Date.now() - startTime;
+
+      console.log(`[GEMINI API RESPONSE] Operation: generateCommitMessage | Duration: ${duration}ms | Response length: ${responseText.length} chars | Model: ${config.gemini.model}`);
+
+      return responseText;
     } catch (error) {
-      console.error('Failed to generate commit message:', error);
+      const duration = Date.now() - startTime;
+      console.error(`[GEMINI API ERROR] Operation: generateCommitMessage | Duration: ${duration}ms | Error: ${error.message}`);
       throw new Error(`Gemini API error: ${error.message}`);
     }
   }

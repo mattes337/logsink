@@ -220,6 +220,42 @@ If you're upgrading from the file-based v1.x version:
 - **OpenAPI Spec**: `GET /openapi.json`
 - **Health Check**: `GET /health`
 
+## 💰 API Cost Monitoring
+
+LogSink includes comprehensive logging for all Gemini API and Embedding service calls to help you track and estimate costs.
+
+### What's Logged
+
+All API calls are logged with:
+- **Operation type** (e.g., generateEmbedding, analyzeLogEntry)
+- **Input size** (character count)
+- **Response size** (character count)
+- **Duration** (milliseconds)
+- **Model used** (e.g., text-embedding-004, gemini-1.5-flash)
+
+### Example Logs
+
+```
+[EMBEDDING API CALL] Operation: generateEmbedding | Text length: 126 chars | Model: text-embedding-004
+[EMBEDDING API RESPONSE] Operation: generateEmbedding | Duration: 234ms | Embedding dimensions: 768 | Model: text-embedding-004
+
+[GEMINI API CALL] Operation: detectDuplicates | Log ID: abc-123 | Candidates: 5 | Prompt length: 1024 chars
+[GEMINI API RESPONSE] Operation: detectDuplicates | Duration: 1523ms | Response length: 256 chars | Model: gemini-1.5-flash
+```
+
+### Cost Estimation
+
+Extract API usage from logs:
+```bash
+# Count all Gemini API calls
+grep "\[GEMINI API CALL\]" app.log | wc -l
+
+# Sum all embedding input characters
+grep "\[EMBEDDING API CALL\]" app.log | grep -oP "Text length: \K\d+" | awk '{s+=$1} END {print s}'
+```
+
+For detailed cost analysis and monitoring recommendations, see [docs/API_COST_LOGGING.md](docs/API_COST_LOGGING.md).
+
 ## 📄 License
 
 MIT License
