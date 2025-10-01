@@ -30,7 +30,7 @@ class DuplicateDetectionService {
       throw new Error('DuplicateDetectionService not initialized');
     }
 
-    const { applicationId, message, context } = logData;
+    const { applicationId, message, context, newLogId } = logData;
     
     // Step 1: Check for exact matches (title/content)
     if (config.duplicateDetection.exactMatchEnabled) {
@@ -50,7 +50,7 @@ class DuplicateDetectionService {
 
     // Step 2: Embedding-based similarity detection
     if (config.duplicateDetection.embeddingEnabled && this.embeddingService.isAvailable()) {
-      const embeddingResult = await this.checkEmbeddingSimilarity(applicationId, message, context);
+      const embeddingResult = await this.checkEmbeddingSimilarity(applicationId, message, context, newLogId);
       if (embeddingResult) {
         return embeddingResult;
       }
@@ -116,7 +116,7 @@ class DuplicateDetectionService {
   /**
    * Check for embedding-based similarity
    */
-  async checkEmbeddingSimilarity(applicationId, message, context) {
+  async checkEmbeddingSimilarity(applicationId, message, context, newLogId) {
     try {
       // Generate embedding for the new log
       const text = this.formatTextForEmbedding({ message, application_id: applicationId, context });
@@ -141,9 +141,9 @@ class DuplicateDetectionService {
 
       if (highSimilarityLog) {
         await this.recordDuplicate(
-          highSimilarityLog.id, 
-          null, 
-          highSimilarityLog.similarity_score, 
+          highSimilarityLog.id,
+          newLogId,
+          highSimilarityLog.similarity_score,
           'embedding_high'
         );
         return {
@@ -164,7 +164,8 @@ class DuplicateDetectionService {
         if (mediumSimilarityLogs.length > 0) {
           const geminiResult = await this.checkGeminiSimilarity(
             { message, applicationId, context },
-            mediumSimilarityLogs
+            mediumSimilarityLogs,
+            newLogId
           );
           if (geminiResult) {
             return geminiResult;
@@ -182,7 +183,7 @@ class DuplicateDetectionService {
   /**
    * Use Gemini for sophisticated duplicate detection on edge cases
    */
-  async checkGeminiSimilarity(logEntry, candidateLogs) {
+  async checkGeminiSimilarity(logEntry, candidateLogs, newLogId) {
     try {
       const similarities = await this.geminiService.detectDuplicates(logEntry, candidateLogs);
       
@@ -191,7 +192,7 @@ class DuplicateDetectionService {
         const candidate = candidateLogs[i];
         
         if (similarity >= config.duplicateDetection.geminiThreshold) {
-          await this.recordDuplicate(candidate.id, null, similarity, 'gemini');
+          await this.recordDuplicate(candidate.id, newLogId, similarity, 'gemini');
           return {
             isDuplicate: true,
             method: 'gemini',

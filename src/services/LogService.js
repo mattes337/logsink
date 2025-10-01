@@ -69,7 +69,8 @@ class LogService {
     const duplicateResult = await this.duplicateDetectionService.detectDuplicate({
       applicationId,
       message,
-      context: processedContext
+      context: processedContext,
+      newLogId: entryId
     });
 
     let resultEntry;
