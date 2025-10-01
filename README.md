@@ -78,6 +78,8 @@ src/
    npm start
    ```
 
+   > **Note**: Database schema is automatically updated on startup. The enhanced duplicate detection features will be available immediately.
+
 ## 📝 API Usage
 
 ### Authentication

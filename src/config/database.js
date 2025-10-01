@@ -94,12 +94,39 @@ class DatabaseManager {
           original_log_id VARCHAR(255) NOT NULL,
           duplicate_log_id VARCHAR(255) NOT NULL,
           similarity_score DECIMAL(5,4) NOT NULL,
-          detection_method VARCHAR(50) NOT NULL DEFAULT 'unknown',
           detected_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
           FOREIGN KEY (original_log_id) REFERENCES logs(id) ON DELETE CASCADE,
-          FOREIGN KEY (duplicate_log_id) REFERENCES logs(id) ON DELETE CASCADE,
-          UNIQUE(original_log_id, duplicate_log_id)
+          FOREIGN KEY (duplicate_log_id) REFERENCES logs(id) ON DELETE CASCADE
         )
+      `);
+
+      // Add detection_method column if it doesn't exist (migration)
+      await client.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'duplicates' AND column_name = 'detection_method'
+          ) THEN
+            ALTER TABLE duplicates ADD COLUMN detection_method VARCHAR(50) NOT NULL DEFAULT 'unknown';
+          END IF;
+        END $$;
+      `);
+
+      // Add unique constraint if it doesn't exist (migration)
+      await client.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE table_name = 'duplicates'
+              AND constraint_type = 'UNIQUE'
+              AND constraint_name = 'duplicates_original_duplicate_unique'
+          ) THEN
+            ALTER TABLE duplicates ADD CONSTRAINT duplicates_original_duplicate_unique
+            UNIQUE (original_log_id, duplicate_log_id);
+          END IF;
+        END $$;
       `);
 
       // Create indexes for better performance
