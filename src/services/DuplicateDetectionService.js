@@ -84,7 +84,16 @@ class DuplicateDetectionService {
       parts.push(context.message);
     }
 
-    return parts.join(' | ');
+    const combined = parts.join(' | ');
+
+    // Debug logging
+    if (context && context.message) {
+      console.log(`[COMBINED MESSAGE] message: "${message}"`);
+      console.log(`[COMBINED MESSAGE] context.message: "${context.message}"`);
+      console.log(`[COMBINED MESSAGE] combined: "${combined}"`);
+    }
+
+    return combined;
   }
 
   /**
@@ -97,6 +106,9 @@ class DuplicateDetectionService {
       // Combine message and context.message for comparison
       const combinedMessage = this.getCombinedMessage(message, context);
 
+      console.log(`[EXACT MATCH] Checking for exact match...`);
+      console.log(`[EXACT MATCH] New combined message: "${combinedMessage}"`);
+
       // Find all open logs for this application
       const query = `
         SELECT id, message, context, state, timestamp
@@ -108,16 +120,24 @@ class DuplicateDetectionService {
 
       const result = await this.pool.query(query, [applicationId]);
 
+      console.log(`[EXACT MATCH] Found ${result.rows.length} open logs to compare`);
+
       // Check each log for a combined message match
       for (const log of result.rows) {
         const logCombinedMessage = this.getCombinedMessage(log.message, log.context);
 
+        console.log(`[EXACT MATCH] Comparing with log ${log.id}:`);
+        console.log(`[EXACT MATCH]   Existing: "${logCombinedMessage}"`);
+        console.log(`[EXACT MATCH]   Match: ${combinedMessage === logCombinedMessage}`);
+
         if (combinedMessage === logCombinedMessage) {
+          console.log(`[EXACT MATCH] ✓ Found exact match!`);
           log._matchType = 'combined_message';
           return log;
         }
       }
 
+      console.log(`[EXACT MATCH] ✗ No exact match found`);
       return null;
     } catch (error) {
       console.error('Error finding exact match:', error);
