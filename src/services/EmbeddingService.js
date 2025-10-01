@@ -81,13 +81,15 @@ class EmbeddingService {
 
     try {
       const similarityThreshold = threshold || config.embedding.similarityThreshold;
-      
+
+      console.log(`[EmbeddingService] Finding similar logs for app ${applicationId} with threshold ${similarityThreshold}`);
+
       const query = `
-        SELECT 
-          id, 
-          application_id, 
-          message, 
-          state, 
+        SELECT
+          id,
+          application_id,
+          message,
+          state,
           timestamp,
           context,
           screenshots,
@@ -100,18 +102,31 @@ class EmbeddingService {
         ORDER BY embedding <=> $1::vector
         LIMIT $4
       `;
-      
+
       const result = await this.pool.query(query, [
-        JSON.stringify(embedding), 
-        applicationId, 
-        similarityThreshold, 
+        JSON.stringify(embedding),
+        applicationId,
+        similarityThreshold,
         limit
       ]);
-      
-      return result.rows.map(row => ({
+
+      console.log(`[EmbeddingService] Found ${result.rows.length} similar logs above threshold ${similarityThreshold}`);
+
+      const mappedResults = result.rows.map(row => ({
         ...row,
         similarity_score: parseFloat(row.similarity_score)
       }));
+
+      if (mappedResults.length > 0) {
+        console.log(`[EmbeddingService] Similar logs:`, mappedResults.map(r => ({
+          id: r.id,
+          state: r.state,
+          similarity: r.similarity_score,
+          message: r.message.substring(0, 50)
+        })));
+      }
+
+      return mappedResults;
     } catch (error) {
       console.error('Failed to find similar logs:', error);
       return [];
