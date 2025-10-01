@@ -74,47 +74,47 @@ class DuplicateDetectionService {
   }
 
   /**
+   * Combine message and context.message into a single string for comparison
+   */
+  getCombinedMessage(message, context) {
+    const parts = [message];
+
+    // If context has a message field, include it
+    if (context && context.message) {
+      parts.push(context.message);
+    }
+
+    return parts.join(' | ');
+  }
+
+  /**
    * Check for exact matches in title and/or content
+   * Now compares combined message (message + context.message) to handle cases
+   * where the actual message content is in different fields
    */
   async findExactMatch(applicationId, message, context) {
     try {
-      // Check for exact message match
-      const messageQuery = `
+      // Combine message and context.message for comparison
+      const combinedMessage = this.getCombinedMessage(message, context);
+
+      // Find all open logs for this application
+      const query = `
         SELECT id, message, context, state, timestamp
         FROM logs
         WHERE application_id = $1
-          AND message = $2
           AND state NOT IN ('closed', 'revert')
         ORDER BY timestamp DESC
-        LIMIT 1
       `;
 
-      const messageResult = await this.pool.query(messageQuery, [applicationId, message]);
-      if (messageResult.rows.length > 0) {
-        const match = messageResult.rows[0];
-        match._matchType = 'message'; // Track what matched
-        return match;
-      }
+      const result = await this.pool.query(query, [applicationId]);
 
-      // Check for exact content match (message + context combination)
-      if (context && Object.keys(context).length > 0) {
-        const contextStr = JSON.stringify(context);
-        const contentQuery = `
-          SELECT id, message, context, state, timestamp
-          FROM logs
-          WHERE application_id = $1
-            AND (message = $2 OR context::text = $3)
-            AND state NOT IN ('closed', 'revert')
-          ORDER BY timestamp DESC
-          LIMIT 1
-        `;
+      // Check each log for a combined message match
+      for (const log of result.rows) {
+        const logCombinedMessage = this.getCombinedMessage(log.message, log.context);
 
-        const contentResult = await this.pool.query(contentQuery, [applicationId, message, contextStr]);
-        if (contentResult.rows.length > 0) {
-          const match = contentResult.rows[0];
-          // Determine if it was message or context that matched
-          match._matchType = match.message === message ? 'message' : 'context';
-          return match;
+        if (combinedMessage === logCombinedMessage) {
+          log._matchType = 'combined_message';
+          return log;
         }
       }
 
@@ -258,16 +258,26 @@ class DuplicateDetectionService {
 
   /**
    * Format text for embedding generation
+   * Uses combined message (message + context.message) to ensure both are always considered
    */
   formatTextForEmbedding(log) {
+    // Use combined message for better duplicate detection
+    const combinedMessage = this.getCombinedMessage(log.message, log.context);
+
     const parts = [
-      `Message: ${log.message}`,
+      `Message: ${combinedMessage}`,
       `Application: ${log.application_id}`
     ];
 
+    // Include other context fields (excluding the message field since it's already in combinedMessage)
     if (log.context && Object.keys(log.context).length > 0) {
-      const contextStr = JSON.stringify(log.context, null, 2);
-      parts.push(`Context: ${contextStr}`);
+      const contextWithoutMessage = { ...log.context };
+      delete contextWithoutMessage.message; // Remove message to avoid duplication
+
+      if (Object.keys(contextWithoutMessage).length > 0) {
+        const contextStr = JSON.stringify(contextWithoutMessage, null, 2);
+        parts.push(`Context: ${contextStr}`);
+      }
     }
 
     return parts.join('\n');

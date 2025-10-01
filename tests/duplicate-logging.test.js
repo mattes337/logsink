@@ -74,19 +74,27 @@ describe('Enhanced Duplicate Detection Logging', function() {
   });
 
   describe('Exact Match Logging', function() {
-    it('should log detailed information for exact message match', async function() {
+    it('should log detailed information for combined message match', async function() {
       const newIssue = {
         applicationId: 'test-app',
-        message: 'Database connection timeout',
-        context: { service: 'auth', error: 'timeout' }
+        message: 'User report: bug',
+        context: {
+          message: 'Device details page needs firmware info',
+          service: 'auth',
+          error: 'timeout'
+        }
       };
 
-      // Mock exact match found
+      // Mock exact match found - same combined message (message + context.message)
       mockPool.query.onFirstCall().resolves({
         rows: [{
           id: 'original-id',
-          message: 'Database connection timeout',
-          context: { service: 'auth', error: 'timeout' },
+          message: 'User report: bug',
+          context: {
+            message: 'Device details page needs firmware info',
+            service: 'auth',
+            error: 'timeout'
+          },
           state: 'open',
           timestamp: new Date('2024-01-01T10:00:00Z')
         }]
@@ -96,47 +104,54 @@ describe('Enhanced Duplicate Detection Logging', function() {
 
       // Verify enhanced logging was called
       expect(consoleLogStub.called).to.be.true;
-      
+
       // Check for key log messages
       const logOutput = consoleLogStub.args.map(args => args.join(' ')).join('\n');
-      
+
       expect(logOutput).to.include('DUPLICATE ISSUE REJECTED');
       expect(logOutput).to.include('Detection Method: Exact Match (100% identical)');
       expect(logOutput).to.include('Similarity Score: 100.0%');
       expect(logOutput).to.include('Original Issue ID: original-id');
-      expect(logOutput).to.include('Match Type: message');
+      expect(logOutput).to.include('Match Type: combined_message');
       expect(logOutput).to.include('NEW ISSUE (rejected)');
       expect(logOutput).to.include('ORIGINAL ISSUE (matched)');
-      expect(logOutput).to.include('Database connection timeout');
+      expect(logOutput).to.include('User report: bug');
     });
 
-    it('should log detailed information for exact context match', async function() {
+    it('should NOT match when combined messages differ', async function() {
       const newIssue = {
         applicationId: 'test-app',
-        message: 'Different message',
-        context: { service: 'auth', error: 'timeout' }
+        message: 'User report: bug',
+        context: {
+          message: 'Different detailed message',
+          service: 'auth'
+        }
       };
 
-      // Mock no message match, but context match
-      mockPool.query.onFirstCall().resolves({ rows: [] });
-      mockPool.query.onSecondCall().resolves({
+      // Mock no match - different combined message
+      mockPool.query.onFirstCall().resolves({
         rows: [{
           id: 'original-id',
-          message: 'Original message',
-          context: { service: 'auth', error: 'timeout' },
+          message: 'User report: bug',
+          context: {
+            message: 'Original detailed message',
+            service: 'auth'
+          },
           state: 'open',
           timestamp: new Date('2024-01-01T10:00:00Z')
         }]
       });
 
+      // Mock embedding service (no exact match, so it will try embedding)
+      embeddingServiceStub.generateEmbedding.resolves([0.1, 0.2, 0.3]);
+      embeddingServiceStub.findSimilarLogs.resolves([]);
+
       await logService.createLog(newIssue);
 
       const logOutput = consoleLogStub.args.map(args => args.join(' ')).join('\n');
-      
-      expect(logOutput).to.include('DUPLICATE ISSUE REJECTED');
-      expect(logOutput).to.include('Match Type: context');
-      expect(logOutput).to.include('Different message');
-      expect(logOutput).to.include('Original message');
+
+      // Should NOT be rejected as duplicate since combined messages differ
+      expect(logOutput).to.not.include('DUPLICATE ISSUE REJECTED');
     });
   });
 

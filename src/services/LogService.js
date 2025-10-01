@@ -126,7 +126,10 @@ class LogService {
           if (duplicateResult.method === 'exact_match') {
             console.log('-'.repeat(80));
             console.log('🔍 ANALYSIS:');
-            if (details.matchType === 'message') {
+            if (details.matchType === 'combined_message') {
+              console.log('  ✓ Combined messages are IDENTICAL');
+              console.log('  ℹ️  Comparison includes both message field and context.message field');
+            } else if (details.matchType === 'message') {
               console.log('  ✓ Messages are IDENTICAL');
             } else if (details.matchType === 'context') {
               console.log('  ✓ Contexts are IDENTICAL');
